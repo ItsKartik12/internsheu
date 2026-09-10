@@ -5,6 +5,8 @@ const routeMeta = {
   '/': { section: 'Overview', page: 'Dashboard' },
   '/skill-gap': { section: 'Growth', page: 'Skill Gap Analysis' },
   '/opportunities': { section: 'Growth', page: 'Opportunity Feed' },
+  '/interview': { section: 'Growth', page: 'AI Mock Interview' },
+  '/learning': { section: 'Growth', page: 'Learning Center' },
   '/applications': { section: 'Tracking', page: 'Applications' },
   '/mentorship': { section: 'Tracking', page: 'Mentorship' },
 }

@@ -5,7 +5,8 @@ import {
   Briefcase,
   FileText,
   MessageSquare,
-  Settings,
+  Video,
+  BookOpen,
   GraduationCap,
 } from 'lucide-react'
 
@@ -13,6 +14,8 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/skill-gap', label: 'Skill Gap Analysis', icon: Radar },
   { to: '/opportunities', label: 'Opportunity Feed', icon: Briefcase },
+  { to: '/interview', label: 'AI Mock Interview', icon: Video },
+  { to: '/learning', label: 'Learning Center', icon: BookOpen },
   { to: '/applications', label: 'Applications', icon: FileText },
   { to: '/mentorship', label: 'Mentorship', icon: MessageSquare },
 ]
