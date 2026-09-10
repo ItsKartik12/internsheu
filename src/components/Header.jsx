@@ -1,5 +1,5 @@
 import { useLocation } from 'react-router-dom'
-import { Bell, ChevronRight } from 'lucide-react'
+import { Bell, ChevronRight, LogOut } from 'lucide-react'
 
 const routeMeta = {
   '/': { section: 'Overview', page: 'Dashboard' },
@@ -11,7 +11,7 @@ const routeMeta = {
   '/mentorship': { section: 'Tracking', page: 'Mentorship' },
 }
 
-export default function Header({ student }) {
+export default function Header({ student, onLogout }) {
   const location = useLocation()
   const meta = routeMeta[location.pathname] ?? { section: 'Overview', page: 'Dashboard' }
 
@@ -44,6 +44,17 @@ export default function Header({ student }) {
             <p className="text-xs text-slate-500">{student.branch}</p>
           </div>
         </div>
+
+        {onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            aria-label="Sign out"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          >
+            <LogOut size={16} />
+          </button>
+        )}
       </div>
     </header>
   )

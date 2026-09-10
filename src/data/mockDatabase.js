@@ -6,6 +6,29 @@
 // at the bottom emulate the joins/queries a real API would perform.
 // ────────────────────────────────────────────────────────────────────────
 
+// ---- users (auth identities — separate from the students table since an
+// admin has no student record; role-based routing keys off this table) ----
+export const users = [
+  {
+    id: 'USR-001',
+    identifier: 'vishal.chauhan@bpit.ac.in',
+    role: 'student',
+    name: 'Vishal Chauhan',
+    studentId: 'STU-001',
+  },
+  {
+    id: 'USR-002',
+    identifier: 'admin@internsheu.com',
+    role: 'admin',
+    name: 'Institute Admin',
+  },
+]
+
+export function getUserByIdentifier(identifier) {
+  const normalized = identifier.trim().toLowerCase()
+  return users.find((u) => u.identifier.toLowerCase() === normalized) ?? null
+}
+
 // ---- students ----
 export const students = [
   {
@@ -122,6 +145,34 @@ export const opportunities = [
     postedDate: '2026-08-20',
     requiredSkillIds: ['SK-06', 'SK-04', 'SK-05'],
   },
+]
+
+// ---- institution-level aggregates (as an admin analytics API would return) ----
+export const adminOverview = {
+  totalStudents: 4820,
+  studentGrowth: '+6.2% this semester',
+  placementRate: 78.4,
+  placementGrowth: '+3.1% vs last cycle',
+  activeInternships: 132,
+  internshipGrowth: '+18 this month',
+  partnerCompanies: 96,
+  partnerGrowth: '+9 new this quarter',
+}
+
+export const departmentBreakdown = [
+  { department: 'Computer Science & Engineering', students: 1240, placementRate: 84 },
+  { department: 'Information Technology', students: 980, placementRate: 81 },
+  { department: 'Electronics & Communication', students: 860, placementRate: 76 },
+  { department: 'Mechanical Engineering', students: 720, placementRate: 68 },
+  { department: 'Civil Engineering', students: 520, placementRate: 62 },
+]
+
+export const recentPlacementActivity = [
+  { id: 'ACT-01', studentName: 'Ananya Sharma', company: 'Zenith Cloud Labs', role: 'Cloud Infrastructure Intern', status: 'Offer accepted', date: '2026-09-08' },
+  { id: 'ACT-02', studentName: 'Rohan Mehta', company: 'Bharat FinTech Works', role: 'Backend Engineering Intern', status: 'Interview scheduled', date: '2026-09-07' },
+  { id: 'ACT-03', studentName: 'Priya Nair', company: 'Nexora Analytics', role: 'Data Systems Intern', status: 'Offer accepted', date: '2026-09-06' },
+  { id: 'ACT-04', studentName: 'Karan Verma', company: 'Kavach Systems', role: 'Security Research Intern', status: 'Application submitted', date: '2026-09-05' },
+  { id: 'ACT-05', studentName: 'Ishita Rao', company: 'Orbit Mobility', role: 'Software Development Intern', status: 'Offer accepted', date: '2026-09-03' },
 ]
 
 // ────────────────────────────────────────────────────────────────────────
