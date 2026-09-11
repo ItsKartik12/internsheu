@@ -1,6 +1,18 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, Award, Radar, Briefcase, TrendingUp } from 'lucide-react'
+import { ArrowUpRight, Award, Radar, Briefcase, TrendingUp, Wifi, WifiOff } from 'lucide-react'
 import { getSkillGapAnalysis, getMatchedOpportunities } from '../data/mockDatabase'
+import { fetchStudentDashboard } from '../services/api'
+
+function initialsFromCompany(name) {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase()
+}
 
 function StatCard({ label, value, sub, icon: Icon, accent }) {
   return (
@@ -18,13 +30,50 @@ function StatCard({ label, value, sub, icon: Icon, accent }) {
 }
 
 export default function StudentDashboard({ student }) {
+  // Local mock computations — always available immediately, and used as the
+  // fallback whenever the live backend isn't reachable.
   const skillGaps = getSkillGapAnalysis(student.id, student.targetRole)
-  const opportunities = getMatchedOpportunities(student.id)
+  const localOpportunities = getMatchedOpportunities(student.id)
+
+  const [liveSkills, setLiveSkills] = useState(null)
+  const [liveOpportunities, setLiveOpportunities] = useState(null)
+  const [isLive, setIsLive] = useState(false)
+  const [isCheckingApi, setIsCheckingApi] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetchStudentDashboard().then((data) => {
+      if (cancelled) return
+      setIsCheckingApi(false)
+
+      if (!data) {
+        setIsLive(false)
+        return
+      }
+
+      setIsLive(true)
+      setLiveSkills(data.student?.skills ?? null)
+      setLiveOpportunities(
+        (data.matchedOpportunities ?? []).map((opp) => ({
+          ...opp,
+          company: { name: opp.company, logoInitials: initialsFromCompany(opp.company) },
+        }))
+      )
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const skillsToShow = liveSkills ?? student.skills
+  const opportunitiesToShow = liveOpportunities ?? localOpportunities
 
   const metSkills = skillGaps.filter((s) => s.status === 'met').length
   const openGaps = skillGaps.filter((s) => s.status === 'gap').length
-  const topMatches = opportunities.slice(0, 3)
-  const bestMatch = opportunities[0]
+  const topMatches = opportunitiesToShow.slice(0, 3)
+  const bestMatch = opportunitiesToShow[0]
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -32,7 +81,21 @@ export default function StudentDashboard({ student }) {
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card">
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
           <div>
-            <p className="text-sm text-slate-500">Welcome back,</p>
+            <div className="flex items-center gap-2.5">
+              <p className="text-sm text-slate-500">Welcome back,</p>
+              {!isCheckingApi && (
+                <span
+                  className={[
+                    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                    isLive ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-500',
+                  ].join(' ')}
+                  title={isLive ? 'Data loaded from the live backend API' : 'Backend unreachable — showing local demo data'}
+                >
+                  {isLive ? <Wifi size={11} /> : <WifiOff size={11} />}
+                  {isLive ? 'Live API' : 'Local demo data'}
+                </span>
+              )}
+            </div>
             <h1 className="mt-0.5 text-xl font-semibold text-slate-900">{student.name}</h1>
             <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-sm text-slate-500">
               <span>Enrollment No. <span className="font-medium text-slate-700">{student.enrollmentNo}</span></span>
@@ -76,7 +139,7 @@ export default function StudentDashboard({ student }) {
         />
         <StatCard
           label="Matched opportunities"
-          value={opportunities.length}
+          value={opportunitiesToShow.length}
           sub={bestMatch ? `Top match: ${bestMatch.matchScore}%` : '—'}
           icon={Briefcase}
           accent="bg-slate-100 text-slate-600"
@@ -93,7 +156,7 @@ export default function StudentDashboard({ student }) {
             </Link>
           </div>
           <ul className="mt-4 space-y-4">
-            {student.skills.map((skill) => (
+            {skillsToShow.map((skill) => (
               <li key={skill.id}>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-slate-700">{skill.name}</span>

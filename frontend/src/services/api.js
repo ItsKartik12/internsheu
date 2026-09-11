@@ -8,7 +8,14 @@
 // keeps working with zero backend setup.
 // ────────────────────────────────────────────────────────────────────────
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+// Your deployed Render backend. Used whenever VITE_API_BASE_URL isn't set
+// (e.g. you forgot to add it in Vercel's dashboard) so production still
+// points at the right place by default. Override it via VITE_API_BASE_URL
+// if you ever move the backend to a different host.
+console.log("Current API URL:", import.meta.env.VITE_API_BASE_URL);
+const DEFAULT_API_BASE_URL = 'https://internsheu.onrender.com'
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL
 
 async function request(path, options = {}) {
   if (!API_BASE_URL) {
