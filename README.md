@@ -1,60 +1,45 @@
 # internsheu — Academia-Industry Collaboration Portal
 
-A Smart India Hackathon prototype: a premium, enterprise-grade student
-portal that surfaces skill gaps against real industry benchmarks and
-algorithmically matches students to internship opportunities.
+Monorepo workspace for the SIH project: a React (Vite) frontend and an
+Express backend, developed and deployed as separate services.
 
-## Stack
+```
+.
+├── frontend/    React + Vite + Tailwind SPA (see frontend/README.md)
+└── backend/     Express API (see backend/README.md)
+```
 
-- React 18 + Vite
-- Tailwind CSS
-- React Router
-- Lucide React icons
+## Running locally
 
-## Getting started
+Each half runs independently — open two terminals:
 
 ```bash
+# Terminal 1 — backend
+cd backend
+cp .env.example .env
 npm install
-npm run dev
+npm run dev        # http://localhost:5000
+
+# Terminal 2 — frontend
+cd frontend
+cp .env.example .env
+npm install
+npm run dev         # http://localhost:5173
 ```
 
-Then open the printed local URL (defaults to `http://localhost:5173`).
+The frontend works fine with the backend not running — `src/services/api.js`
+falls back to the local mock data in `src/data/mockDatabase.js` whenever a
+backend call fails, so you can develop either side independently.
 
-To build for production:
+## Why two folders instead of one
 
-```bash
-npm run build
-npm run preview
-```
+Splitting into `/frontend` and `/backend` lets each half:
 
-## Project structure
+- ship with its own `package.json`, dependencies, and `.env`
+- deploy to different targets (e.g. frontend to Vercel/Netlify, backend to
+  Render/Railway/a VPS) without one's build config leaking into the other
+- be handed to different people to own without stepping on each other's
+  toolchain
 
-```
-src/
-  components/
-    Sidebar.jsx            Persistent left navigation
-    Header.jsx              Top bar — breadcrumbs + profile context
-    StudentDashboard.jsx     Central hub: stats, skill snapshot, top matches
-    SkillGapAnalysis.jsx    Current vs. required proficiency, by target role
-    OpportunityFeed.jsx     Internship listings ranked by match score
-    ComingSoon.jsx          Placeholder for out-of-scope nav items
-  data/
-    mockDatabase.js         Normalized mock tables + join-style selectors
-  App.jsx                    Routing + layout shell
-  main.jsx                   Entry point
-```
-
-## Data model
-
-`src/data/mockDatabase.js` models the domain the way a relational schema
-would: `students`, `skills`, `student_skills` (join), `industry_roles`,
-`role_requirements` (join), `companies`, and `opportunities`. Selector
-functions at the bottom of the file perform the joins a real API would —
-`getSkillGapAnalysis` and `getMatchedOpportunities` are the two the UI
-consumes directly.
-
-The default logged-in student is pre-populated as:
-
-- **Name:** Vishal Chauhan
-- **Enrollment No:** 08520803124
-- **Current skills:** C++, JavaScript (ES6), Database Modeling
+Neither folder depends on the other at build time — they only talk over
+HTTP at runtime, via `VITE_API_BASE_URL`.
