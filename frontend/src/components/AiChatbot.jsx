@@ -71,7 +71,7 @@ export default function AiChatbot() {
   return (
     <>
       {isOpen && (
-        <div className="fixed bottom-24 right-6 z-50 flex h-[520px] w-[360px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md">
+        <div className="fixed inset-x-4 bottom-24 z-50 flex h-[70vh] max-h-[520px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md sm:inset-x-auto sm:right-6 sm:w-[360px]">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-100 bg-slate-900 px-4 py-3.5">
             <div className="flex items-center gap-2.5">

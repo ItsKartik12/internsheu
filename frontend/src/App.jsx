@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, Outlet, useLocation, useOutletContext } from 'react-router-dom'
 import { LogOut, ShieldCheck } from 'lucide-react'
 import Sidebar from './components/Sidebar'
@@ -51,6 +52,14 @@ function ProtectedRoute({ allowedRoles }) {
 function StudentLayout() {
   const { user, logout } = useAuth()
   const student = useCurrentStudent(user?.studentId)
+  const location = useLocation()
+  const [isNavOpen, setIsNavOpen] = useState(false)
+
+  // Close the mobile drawer automatically whenever the route changes, so
+  // tapping a nav link doesn't leave the overlay sitting open behind it.
+  useEffect(() => {
+    setIsNavOpen(false)
+  }, [location.pathname])
 
   if (!student) {
     return <Navigate to="/login" replace />
@@ -58,10 +67,10 @@ function StudentLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
-      <Sidebar />
+      <Sidebar isOpen={isNavOpen} onClose={() => setIsNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header student={student} onLogout={logout} />
-        <main className="flex-1 overflow-y-auto px-6 py-8">
+        <Header student={student} onLogout={logout} onMenuClick={() => setIsNavOpen(true)} />
+        <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
           <Outlet context={student} />
         </main>
       </div>
