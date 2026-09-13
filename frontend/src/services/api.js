@@ -11,7 +11,9 @@ import {
   FALLBACK_TOPICS,
 } from '../data/fallbackData'
 
-const DEFAULT_API_BASE_URL = import.meta.env.DEV ? 'http://localhost:5000' : ''
+const DEFAULT_API_BASE_URL = import.meta.env.DEV
+  ? 'http://localhost:5000'
+  : 'https://internsheu.onrender.com'
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL !== undefined
