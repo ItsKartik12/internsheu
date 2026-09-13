@@ -23,13 +23,6 @@ const userSchema = new Schema(
       required: true,
       trim: true,
     },
-    enrollmentNo: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      index: true,
-    },
     email: {
       type: String,
       required: true,
@@ -38,19 +31,37 @@ const userSchema = new Schema(
       lowercase: true,
       index: true,
     },
+    passwordHash: {
+      type: String,
+      // Not required so legacy mock records without passwords still load.
+      // Real registrations always set this via the auth controller.
+    },
+    enrollmentNo: {
+      type: String,
+      // Optional — only students have enrollment numbers.
+      // Sparse index ensures uniqueness only among documents that have it.
+      unique: true,
+      sparse: true,
+      trim: true,
+      index: true,
+    },
     // Assigned once during onboarding and treated as immutable afterwards —
     // this is the attribute the matching logic keys off of. It is a single
     // scalar value (a student belongs to exactly one field), not an array.
+    // Optional — only relevant for students.
     fieldMark: {
       type: String,
-      required: true,
       enum: FIELD_MARKS,
       index: true, // supports the reverse lookup: "everyone in this field"
     },
     role: {
       type: String,
-      enum: ['student', 'admin'],
+      enum: ['student', 'educator', 'industry', 'admin'],
       default: 'student',
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
   },
   { timestamps: true }

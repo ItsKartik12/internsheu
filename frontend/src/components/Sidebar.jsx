@@ -8,11 +8,19 @@ import {
   Video,
   BookOpen,
   GraduationCap,
+  Award,
+  Sparkles,
+  Building2,
   X,
 } from 'lucide-react'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/courses', label: 'Verified Courses', icon: BookOpen },
+  { to: '/internships', label: 'Internships', icon: Briefcase },
+  { to: '/jobs', label: 'Career Jobs', icon: Building2 },
+  { to: '/assessment', label: 'Skill Assessments', icon: Award },
+  { to: '/assessment/results', label: 'Skill Matrix', icon: Sparkles },
   { to: '/skill-gap', label: 'Skill Gap Analysis', icon: Radar },
   { to: '/opportunities', label: 'Opportunity Feed', icon: Briefcase },
   { to: '/interview', label: 'AI Mock Interview', icon: Video },

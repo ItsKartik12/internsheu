@@ -1,67 +1,273 @@
 // ────────────────────────────────────────────────────────────────────────
 // API service utility — talks to the Express backend in /backend.
-//
-// Every function here is safe to call even if the backend isn't running:
-// on any network failure or non-2xx response it logs a warning and
-// resolves to `null` instead of throwing, so calling components can fall
-// back to the local mock data in `src/data/mockDatabase.js` and the demo
-// keeps working with zero backend setup.
+// Supports JWT authorization headers, fallback to mock data, and full CRUD.
 // ────────────────────────────────────────────────────────────────────────
 
-// Your deployed Render backend. Used whenever VITE_API_BASE_URL isn't set
-// (e.g. you forgot to add it in Vercel's dashboard) so production still
-// points at the right place by default. Override it via VITE_API_BASE_URL
-// if you ever move the backend to a different host.
-const DEFAULT_API_BASE_URL = 'https://internsheu.onrender.com'
+const DEFAULT_API_BASE_URL = import.meta.env.DEV
+  ? 'http://localhost:5000'
+  : 'https://internsheu.onrender.com'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL
 
-async function request(path, options = {}) {
-  if (!API_BASE_URL) {
-    throw new Error('VITE_API_BASE_URL is not set — skipping network call')
+function getAuthHeaders() {
+  const token = localStorage.getItem('token')
+  const headers = { 'Content-Type': 'application/json' }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
   }
+  return headers
+}
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+export async function request(path, options = {}) {
+  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`
+  const response = await fetch(url, {
+    headers: {
+      ...getAuthHeaders(),
+      ...(options.headers || {}),
+    },
     ...options,
   })
 
+  const data = await response.json().catch(() => ({}))
+
   if (!response.ok) {
-    throw new Error(`API request to ${path} failed with status ${response.status}`)
+    const errorMsg = data?.error || `API request failed with status ${response.status}`
+    const error = new Error(errorMsg)
+    error.status = response.status
+    error.data = data
+    throw error
   }
 
-  return response.json()
+  return data
 }
 
-// Wraps `request` so every service function shares the same
-// warn-and-fall-back-to-null behavior instead of repeating try/catch.
-async function safeRequest(path, options) {
+export async function safeRequest(path, options = {}, fallback = null) {
   try {
     return await request(path, options)
   } catch (err) {
-    console.warn(`[api] ${err.message}. Falling back to local mock data.`)
-    return null
+    console.warn(`[api] safeRequest(${path}) failed: ${err.message}. Using fallback.`)
+    return fallback
   }
 }
 
-/**
- * Fetches the logged-in student's dashboard payload — profile, skills, and
- * matched opportunities — from GET /api/student/dashboard.
- *
- * @returns {Promise<{ student: object, matchedOpportunities: object[] } | null>}
- *   `null` when the backend is unreachable; callers should fall back to
- *   `getStudentById` / `getMatchedOpportunities` from mockDatabase.js.
- */
+// ── Auth APIs ──
+export async function loginUser(email, password) {
+  return request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function registerUser(userData) {
+  return request('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(userData),
+  })
+}
+
+export async function fetchCurrentUser() {
+  return safeRequest('/api/auth/me')
+}
+
+// ── Courses APIs ──
+export async function fetchCourses(params = {}) {
+  const query = new URLSearchParams()
+  if (params.search) query.set('search', params.search)
+  if (params.category) query.set('category', params.category)
+  if (params.level) query.set('level', params.level)
+  if (params.educatorId) query.set('educatorId', params.educatorId)
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  return safeRequest(`/api/courses${qs}`, {}, { courses: [] })
+}
+
+export async function fetchCourseById(id) {
+  return request(`/api/courses/${id}`)
+}
+
+export async function createCourseApi(courseData) {
+  return request('/api/courses', {
+    method: 'POST',
+    body: JSON.stringify(courseData),
+  })
+}
+
+export async function updateCourseApi(id, courseData) {
+  return request(`/api/courses/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(courseData),
+  })
+}
+
+export async function deleteCourseApi(id) {
+  return request(`/api/courses/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function enrollCourseApi(id) {
+  return request(`/api/courses/${id}/enroll`, {
+    method: 'POST',
+  })
+}
+
+// ── Internships APIs ──
+export async function fetchInternships(params = {}) {
+  const query = new URLSearchParams()
+  if (params.search) query.set('search', params.search)
+  if (params.location) query.set('location', params.location)
+  if (params.type) query.set('type', params.type)
+  if (params.skill) query.set('skill', params.skill)
+  if (params.industryId) query.set('industryId', params.industryId)
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  return safeRequest(`/api/internships${qs}`, {}, { internships: [] })
+}
+
+export async function createInternshipApi(internshipData) {
+  return request('/api/internships', {
+    method: 'POST',
+    body: JSON.stringify(internshipData),
+  })
+}
+
+export async function updateInternshipApi(id, internshipData) {
+  return request(`/api/internships/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(internshipData),
+  })
+}
+
+export async function deleteInternshipApi(id) {
+  return request(`/api/internships/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function applyInternshipApi(id) {
+  return request(`/api/internships/${id}/apply`, {
+    method: 'POST',
+  })
+}
+
+// ── Jobs APIs ──
+export async function fetchJobs(params = {}) {
+  const query = new URLSearchParams()
+  if (params.search) query.set('search', params.search)
+  if (params.location) query.set('location', params.location)
+  if (params.type) query.set('type', params.type)
+  if (params.experienceLevel) query.set('experienceLevel', params.experienceLevel)
+  if (params.skill) query.set('skill', params.skill)
+  if (params.industryId) query.set('industryId', params.industryId)
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  return safeRequest(`/api/jobs${qs}`, {}, { jobs: [] })
+}
+
+export async function createJobApi(jobData) {
+  return request('/api/jobs', {
+    method: 'POST',
+    body: JSON.stringify(jobData),
+  })
+}
+
+export async function updateJobApi(id, jobData) {
+  return request(`/api/jobs/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(jobData),
+  })
+}
+
+export async function deleteJobApi(id) {
+  return request(`/api/jobs/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function applyJobApi(id) {
+  return request(`/api/jobs/${id}/apply`, {
+    method: 'POST',
+  })
+}
+
+// ── Assessment APIs ──
+export async function fetchAssessmentTopics() {
+  return safeRequest('/api/assessment/topics', {}, { topics: [] })
+}
+
+export async function createAssessmentTopicApi(topicData) {
+  return request('/api/assessment/topics', {
+    method: 'POST',
+    body: JSON.stringify(topicData),
+  })
+}
+
+export async function updateAssessmentTopicApi(id, topicData) {
+  return request(`/api/assessment/topics/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(topicData),
+  })
+}
+
+export async function deleteAssessmentTopicApi(id) {
+  return request(`/api/assessment/topics/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function fetchAssessmentQuestions(topicId) {
+  const qs = topicId ? `?topicId=${topicId}` : ''
+  return safeRequest(`/api/assessment/questions${qs}`, {}, { questions: [] })
+}
+
+export async function createAssessmentQuestionApi(questionData) {
+  return request('/api/assessment/questions', {
+    method: 'POST',
+    body: JSON.stringify(questionData),
+  })
+}
+
+export async function updateAssessmentQuestionApi(id, questionData) {
+  return request(`/api/assessment/questions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(questionData),
+  })
+}
+
+export async function deleteAssessmentQuestionApi(id) {
+  return request(`/api/assessment/questions/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function startAssessmentApi(topicId) {
+  return request('/api/assessment/start', {
+    method: 'POST',
+    body: JSON.stringify({ topicId }),
+  })
+}
+
+export async function submitAssessmentApi(payload) {
+  return request('/api/assessment/submit', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function fetchMyAssessmentAttempts() {
+  return safeRequest('/api/assessment/attempts', {}, { attempts: [] })
+}
+
+export async function fetchMySkillResults() {
+  return safeRequest('/api/assessment/results/me', {}, { result: null })
+}
+
+export async function fetchAllStudentResults() {
+  return safeRequest('/api/assessment/results/all', {}, { results: [] })
+}
+
+// ── Student dashboard & connectivity ──
 export async function fetchStudentDashboard() {
   return safeRequest('/api/student/dashboard')
 }
 
-/**
- * Basic connectivity check against GET /api/health. Useful for a "backend
- * connected" indicator in the UI without committing to a specific route.
- *
- * @returns {Promise<boolean>}
- */
 export async function pingApi() {
   const result = await safeRequest('/api/health')
   return result?.status === 'ok'

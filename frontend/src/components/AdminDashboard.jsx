@@ -16,7 +16,9 @@ import {
   PlayCircle,
   MapPin,
   IndianRupee,
+  Award,
 } from 'lucide-react'
+import AdminAssessmentManager from './AdminAssessmentManager'
 import {
   adminOverview,
   departmentBreakdown,
@@ -109,6 +111,7 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid },
   { id: 'videos', label: 'Manage Learning Videos', icon: Video },
   { id: 'jobs', label: 'Manage Job Opportunities', icon: FileText },
+  { id: 'assessments', label: 'Assessment & Skill Rankings', icon: Award },
 ]
 
 function extractYoutubeId(input) {
@@ -853,6 +856,7 @@ export default function AdminDashboard() {
       {activeTab === 'jobs' && (
         <ManageJobsTab jobs={jobs} onAdd={addJob} onUpdate={updateJob} onDelete={deleteJob} />
       )}
+      {activeTab === 'assessments' && <AdminAssessmentManager />}
     </div>
   )
 }

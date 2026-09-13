@@ -1,26 +1,61 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
+import { fetchCurrentUser } from '../services/api'
 
 const AuthContext = createContext(null)
 
-// Demo-only auth store. Replace with a real session check (JWT/cookie
-// validation against a backend) when auth is wired up for real. `user`
-// holds { id, identifier, role, name, studentId? } as resolved by the
-// OTP verification step in Login.jsx.
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem('user')
+      return stored ? JSON.parse(stored) : null
+    } catch {
+      return null
+    }
+  })
 
-  function login(nextUser) {
-    setUser(nextUser)
+  const [token, setToken] = useState(() => localStorage.getItem('token') || null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Verify and sync token on initial mount
+  useEffect(() => {
+    async function syncSession() {
+      if (token) {
+        const response = await fetchCurrentUser()
+        if (response?.user) {
+          setUser(response.user)
+          localStorage.setItem('user', JSON.stringify(response.user))
+        } else if (response === null && !localStorage.getItem('user')) {
+          // Unreachable backend or expired session
+        }
+      }
+      setIsLoading(false)
+    }
+    syncSession()
+  }, [token])
+
+  function login(authData) {
+    if (authData.token) {
+      setToken(authData.token)
+      localStorage.setItem('token', authData.token)
+    }
+    const userData = authData.user || authData
+    setUser(userData)
+    localStorage.setItem('user', JSON.stringify(userData))
   }
 
   function logout() {
+    setToken(null)
     setUser(null)
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
   }
 
   const value = {
     user,
+    token,
     role: user?.role ?? null,
     isAuthenticated: Boolean(user),
+    isLoading,
     login,
     logout,
   }
