@@ -1,4 +1,12 @@
+import dns from 'node:dns'
 import mongoose from 'mongoose'
+
+// Ensure Node resolves MongoDB Atlas SRV records reliably
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1'])
+} catch {
+  // fallback to system resolver
+}
 
 // Not called from server.js yet — the app currently runs entirely on the
 // mock data in data/studentDashboard.js, and that keeps working with zero
