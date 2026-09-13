@@ -15,11 +15,11 @@ import { useNavigate } from 'react-router-dom'
 
 function levelBadgeColor(level) {
   switch (level) {
-    case 'Expert':
+    case 'Excellent':
       return 'bg-emerald-100 text-emerald-800 border-emerald-300'
-    case 'Advanced':
+    case 'Strong':
       return 'bg-blue-100 text-blue-800 border-blue-300'
-    case 'Proficient':
+    case 'Intermediate':
       return 'bg-indigo-100 text-indigo-800 border-indigo-300'
     case 'Beginner':
       return 'bg-amber-100 text-amber-800 border-amber-300'
@@ -180,7 +180,7 @@ export default function SkillResultsPage() {
                     </span>
                   </div>
 
-                  <h3 className="mt-3 text-sm font-bold text-slate-900">{skill.topicName}</h3>
+                  <h3 className="mt-3 text-sm font-bold text-slate-900">{skill.topic || skill.topicName}</h3>
 
                   <div className="mt-4">
                     <div className="flex items-center justify-between text-xs font-semibold">

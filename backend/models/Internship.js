@@ -68,4 +68,4 @@ const internshipSchema = new Schema(
 // Index for skill searches
 internshipSchema.index({ skills: 1 })
 
-export default mongoose.model('Internship', internshipSchema)
+export default mongoose.model('Internship', internshipSchema, 'internships')

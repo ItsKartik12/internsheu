@@ -8,9 +8,12 @@ const topicSkillSchema = new Schema({
     ref: 'AssessmentTopic',
     required: true,
   },
-  topicName: {
+  topic: {
     type: String,
     required: true,
+  },
+  topicName: {
+    type: String,
   },
   category: {
     type: String,
@@ -33,7 +36,7 @@ const topicSkillSchema = new Schema({
   },
   level: {
     type: String,
-    enum: ['Needs Improvement', 'Beginner', 'Proficient', 'Advanced', 'Expert'],
+    enum: ['Needs Improvement', 'Beginner', 'Intermediate', 'Strong', 'Excellent'],
     default: 'Beginner',
   },
   attemptsCount: {
@@ -62,11 +65,11 @@ const skillResultSchema = new Schema(
     },
     overallLevel: {
       type: String,
-      enum: ['Needs Improvement', 'Beginner', 'Proficient', 'Advanced', 'Expert'],
+      enum: ['Needs Improvement', 'Beginner', 'Intermediate', 'Strong', 'Excellent'],
       default: 'Beginner',
     },
   },
   { timestamps: true }
 )
 
-export default mongoose.model('SkillResult', skillResultSchema)
+export default mongoose.model('SkillResult', skillResultSchema, 'skillresults')

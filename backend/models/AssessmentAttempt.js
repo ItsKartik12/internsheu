@@ -36,6 +36,12 @@ const assessmentAttemptSchema = new Schema(
       required: true,
       index: true,
     },
+    questionIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'AssessmentQuestion',
+      },
+    ],
     answers: [answerSchema],
     score: {
       type: Number,
@@ -68,4 +74,4 @@ const assessmentAttemptSchema = new Schema(
   { timestamps: true }
 )
 
-export default mongoose.model('AssessmentAttempt', assessmentAttemptSchema)
+export default mongoose.model('AssessmentAttempt', assessmentAttemptSchema, 'assessmentattempts')

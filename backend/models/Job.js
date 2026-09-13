@@ -69,4 +69,4 @@ const jobSchema = new Schema(
 // Index for search
 jobSchema.index({ skills: 1 })
 
-export default mongoose.model('Job', jobSchema)
+export default mongoose.model('Job', jobSchema, 'jobs')

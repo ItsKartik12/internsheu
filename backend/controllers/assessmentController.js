@@ -4,10 +4,10 @@ import AssessmentAttempt from '../models/AssessmentAttempt.js'
 import SkillResult from '../models/SkillResult.js'
 
 function determineSkillLevel(percentage) {
-  if (percentage >= 85) return 'Expert'
-  if (percentage >= 70) return 'Advanced'
-  if (percentage >= 50) return 'Proficient'
-  if (percentage >= 35) return 'Beginner'
+  if (percentage >= 90) return 'Excellent'
+  if (percentage >= 75) return 'Strong'
+  if (percentage >= 60) return 'Intermediate'
+  if (percentage >= 40) return 'Beginner'
   return 'Needs Improvement'
 }
 
@@ -294,6 +294,7 @@ export async function submitAssessment(req, res, next) {
     const attempt = await AssessmentAttempt.create({
       studentId: req.user._id,
       topicId: topic._id,
+      questionIds: scoredAnswers.map((a) => a.questionId),
       answers: scoredAnswers.map(({ questionId, selectedAnswer, isCorrect, marksObtained }) => ({
         questionId,
         selectedAnswer,
@@ -327,6 +328,7 @@ export async function submitAssessment(req, res, next) {
       const prev = skillDoc.skills[existingSkillIndex]
       skillDoc.skills[existingSkillIndex] = {
         topicId: topic._id,
+        topic: topic.name,
         topicName: topic.name,
         category: topic.category,
         score: Math.max(prev.score, score),
@@ -339,6 +341,7 @@ export async function submitAssessment(req, res, next) {
     } else {
       skillDoc.skills.push({
         topicId: topic._id,
+        topic: topic.name,
         topicName: topic.name,
         category: topic.category,
         score,

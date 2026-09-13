@@ -50,4 +50,4 @@ const assessmentTopicSchema = new Schema(
   { timestamps: true }
 )
 
-export default mongoose.model('AssessmentTopic', assessmentTopicSchema)
+export default mongoose.model('AssessmentTopic', assessmentTopicSchema, 'assessmenttopics')
