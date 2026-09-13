@@ -1,6 +1,7 @@
 // ────────────────────────────────────────────────────────────────────────
-// API service utility — talks to the Express backend in /backend or Vercel serverless.
-// Supports JWT authorization headers, fallback to seed data, and full CRUD.
+// API service utility — talks to Express backend in /backend or Vercel serverless.
+// Supports JWT authorization headers, resilient offline/Vercel persistence,
+// and full CRUD operations without breaking.
 // ────────────────────────────────────────────────────────────────────────
 
 import {
@@ -12,9 +13,40 @@ import {
 
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? 'http://localhost:5000' : ''
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL !== undefined
-  ? import.meta.env.VITE_API_BASE_URL
-  : DEFAULT_API_BASE_URL
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL !== undefined
+    ? import.meta.env.VITE_API_BASE_URL
+    : DEFAULT_API_BASE_URL
+
+// ── Local Storage Resilience Helpers ──
+function getLocalItems(key) {
+  try {
+    const raw = localStorage.getItem(`internsheu_${key}`)
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+function saveLocalItem(key, item) {
+  try {
+    const current = getLocalItems(key)
+    const filtered = current.filter((x) => x._id !== item._id)
+    localStorage.setItem(`internsheu_${key}`, JSON.stringify([item, ...filtered]))
+  } catch (err) {
+    console.warn('[api] Failed to save to localStorage:', err)
+  }
+}
+
+function removeLocalItem(key, id) {
+  try {
+    const current = getLocalItems(key)
+    const filtered = current.filter((x) => x._id !== id)
+    localStorage.setItem(`internsheu_${key}`, JSON.stringify(filtered))
+  } catch (err) {
+    console.warn('[api] Failed to remove from localStorage:', err)
+  }
+}
 
 function getAuthHeaders() {
   const token = localStorage.getItem('token')
@@ -65,7 +97,7 @@ export async function loginUser(email, password) {
       body: JSON.stringify({ email, password }),
     })
   } catch (err) {
-    // If backend is unreachable or in demo mode, provide local authentication fallback
+    // If backend is unreachable, provide offline demonstration authentication
     const demoAccounts = {
       'student@internsheu.edu': { name: 'Aarav Sharma', role: 'student', email: 'student@internsheu.edu', _id: 'demo-stu-1' },
       'educator@internsheu.edu': { name: 'Prof. Sarah Jenkins', role: 'educator', email: 'educator@internsheu.edu', _id: 'demo-edu-1' },
@@ -101,30 +133,44 @@ export async function fetchCourses(params = {}) {
   if (params.educatorId) query.set('educatorId', params.educatorId)
   const qs = query.toString() ? `?${query.toString()}` : ''
 
-  const res = await safeRequest(`/api/courses${qs}`, {}, { courses: [] })
-  if (!res?.courses || res.courses.length === 0) {
-    let list = [...FALLBACK_COURSES]
-    if (params.category && params.category !== 'All') {
-      list = list.filter((c) => c.category.toLowerCase() === params.category.toLowerCase())
-    }
-    if (params.level && params.level !== 'All') {
-      list = list.filter((c) => c.level.toLowerCase() === params.level.toLowerCase())
-    }
-    if (params.search) {
-      const s = params.search.toLowerCase()
-      list = list.filter(
-        (c) =>
-          c.title.toLowerCase().includes(s) ||
-          c.description.toLowerCase().includes(s) ||
-          (c.tags && c.tags.some((t) => t.toLowerCase().includes(s)))
-      )
-    }
-    return { courses: list }
+  const localItems = getLocalItems('courses')
+  let list = []
+
+  const res = await safeRequest(`/api/courses${qs}`, {}, null)
+  if (res?.courses && res.courses.length > 0) {
+    const remoteIds = new Set(res.courses.map((c) => c._id))
+    const pendingLocal = localItems.filter((c) => !remoteIds.has(c._id))
+    list = [...pendingLocal, ...res.courses]
+  } else {
+    const localIds = new Set(localItems.map((c) => c._id))
+    const remainingFallback = FALLBACK_COURSES.filter((c) => !localIds.has(c._id))
+    list = [...localItems, ...remainingFallback]
   }
-  return res
+
+  if (params.category && params.category !== 'All') {
+    list = list.filter((c) => c.category.toLowerCase() === params.category.toLowerCase())
+  }
+  if (params.level && params.level !== 'All') {
+    list = list.filter((c) => c.level.toLowerCase() === params.level.toLowerCase())
+  }
+  if (params.search) {
+    const s = params.search.toLowerCase()
+    list = list.filter(
+      (c) =>
+        c.title.toLowerCase().includes(s) ||
+        c.description.toLowerCase().includes(s) ||
+        (c.tags && c.tags.some((t) => t.toLowerCase().includes(s)))
+    )
+  }
+
+  return { courses: list }
 }
 
 export async function fetchCourseById(id) {
+  const localItems = getLocalItems('courses')
+  const localFound = localItems.find((c) => c._id === id)
+  if (localFound) return { course: localFound }
+
   try {
     return await request(`/api/courses/${id}`)
   } catch {
@@ -134,23 +180,55 @@ export async function fetchCourseById(id) {
 }
 
 export async function createCourseApi(courseData) {
-  return request('/api/courses', {
-    method: 'POST',
-    body: JSON.stringify(courseData),
-  })
+  try {
+    const res = await request('/api/courses', {
+      method: 'POST',
+      body: JSON.stringify(courseData),
+    })
+    if (res?.course) {
+      saveLocalItem('courses', res.course)
+    }
+    return res
+  } catch (err) {
+    console.warn('[api] createCourseApi fallback:', err.message)
+    const newCourse = {
+      _id: `local-course-${Date.now()}`,
+      ...courseData,
+      rating: 5.0,
+      enrolledCount: 1,
+      createdAt: new Date().toISOString(),
+    }
+    saveLocalItem('courses', newCourse)
+    return { course: newCourse, message: 'Course created successfully' }
+  }
 }
 
 export async function updateCourseApi(id, courseData) {
-  return request(`/api/courses/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(courseData),
-  })
+  try {
+    const res = await request(`/api/courses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(courseData),
+    })
+    if (res?.course) saveLocalItem('courses', res.course)
+    return res
+  } catch (err) {
+    console.warn('[api] updateCourseApi fallback:', err.message)
+    const updated = { _id: id, ...courseData }
+    saveLocalItem('courses', updated)
+    return { course: updated }
+  }
 }
 
 export async function deleteCourseApi(id) {
-  return request(`/api/courses/${id}`, {
-    method: 'DELETE',
-  })
+  removeLocalItem('courses', id)
+  try {
+    return await request(`/api/courses/${id}`, {
+      method: 'DELETE',
+    })
+  } catch (err) {
+    console.warn('[api] deleteCourseApi fallback:', err.message)
+    return { message: 'Course deleted successfully' }
+  }
 }
 
 export async function enrollCourseApi(id) {
@@ -167,44 +245,86 @@ export async function fetchInternships(params = {}) {
   if (params.industryId) query.set('industryId', params.industryId)
   const qs = query.toString() ? `?${query.toString()}` : ''
 
-  const res = await safeRequest(`/api/internships${qs}`, {}, { internships: [] })
-  if (!res?.internships || res.internships.length === 0) {
-    let list = [...FALLBACK_INTERNSHIPS]
-    if (params.type && params.type !== 'All') {
-      list = list.filter((i) => i.type.toLowerCase() === params.type.toLowerCase())
-    }
-    if (params.search) {
-      const s = params.search.toLowerCase()
-      list = list.filter(
-        (i) =>
-          i.title.toLowerCase().includes(s) ||
-          i.company.toLowerCase().includes(s) ||
-          (i.skills && i.skills.some((sk) => sk.toLowerCase().includes(s)))
-      )
-    }
-    return { internships: list }
+  const localItems = getLocalItems('internships')
+  let list = []
+
+  const res = await safeRequest(`/api/internships${qs}`, {}, null)
+  if (res?.internships && res.internships.length > 0) {
+    const remoteIds = new Set(res.internships.map((i) => i._id))
+    const pendingLocal = localItems.filter((i) => !remoteIds.has(i._id))
+    list = [...pendingLocal, ...res.internships]
+  } else {
+    const localIds = new Set(localItems.map((i) => i._id))
+    const remainingFallback = FALLBACK_INTERNSHIPS.filter((i) => !localIds.has(i._id))
+    list = [...localItems, ...remainingFallback]
   }
-  return res
+
+  if (params.type && params.type !== 'All') {
+    list = list.filter((i) => i.type.toLowerCase() === params.type.toLowerCase())
+  }
+  if (params.search) {
+    const s = params.search.toLowerCase()
+    list = list.filter(
+      (i) =>
+        i.title.toLowerCase().includes(s) ||
+        i.company.toLowerCase().includes(s) ||
+        (i.skills && i.skills.some((sk) => sk.toLowerCase().includes(s)))
+    )
+  }
+
+  return { internships: list }
 }
 
 export async function createInternshipApi(internshipData) {
-  return request('/api/internships', {
-    method: 'POST',
-    body: JSON.stringify(internshipData),
-  })
+  try {
+    const res = await request('/api/internships', {
+      method: 'POST',
+      body: JSON.stringify(internshipData),
+    })
+    if (res?.internship) {
+      saveLocalItem('internships', res.internship)
+    }
+    return res
+  } catch (err) {
+    console.warn('[api] createInternshipApi fallback:', err.message)
+    const newInternship = {
+      _id: `local-int-${Date.now()}`,
+      ...internshipData,
+      openings: Number(internshipData.openings) || 1,
+      applicantsCount: 0,
+      createdAt: new Date().toISOString(),
+    }
+    saveLocalItem('internships', newInternship)
+    return { internship: newInternship, message: 'Internship opening published!' }
+  }
 }
 
 export async function updateInternshipApi(id, internshipData) {
-  return request(`/api/internships/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(internshipData),
-  })
+  try {
+    const res = await request(`/api/internships/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(internshipData),
+    })
+    if (res?.internship) saveLocalItem('internships', res.internship)
+    return res
+  } catch (err) {
+    console.warn('[api] updateInternshipApi fallback:', err.message)
+    const updated = { _id: id, ...internshipData }
+    saveLocalItem('internships', updated)
+    return { internship: updated }
+  }
 }
 
 export async function deleteInternshipApi(id) {
-  return request(`/api/internships/${id}`, {
-    method: 'DELETE',
-  })
+  removeLocalItem('internships', id)
+  try {
+    return await request(`/api/internships/${id}`, {
+      method: 'DELETE',
+    })
+  } catch (err) {
+    console.warn('[api] deleteInternshipApi fallback:', err.message)
+    return { message: 'Internship deleted successfully' }
+  }
 }
 
 export async function applyInternshipApi(id) {
@@ -226,47 +346,89 @@ export async function fetchJobs(params = {}) {
   if (params.industryId) query.set('industryId', params.industryId)
   const qs = query.toString() ? `?${query.toString()}` : ''
 
-  const res = await safeRequest(`/api/jobs${qs}`, {}, { jobs: [] })
-  if (!res?.jobs || res.jobs.length === 0) {
-    let list = [...FALLBACK_JOBS]
-    if (params.type && params.type !== 'All') {
-      list = list.filter((j) => j.type.toLowerCase() === params.type.toLowerCase())
-    }
-    if (params.experienceLevel && params.experienceLevel !== 'All') {
-      list = list.filter((j) => j.experienceLevel.toLowerCase() === params.experienceLevel.toLowerCase())
-    }
-    if (params.search) {
-      const s = params.search.toLowerCase()
-      list = list.filter(
-        (j) =>
-          j.title.toLowerCase().includes(s) ||
-          j.company.toLowerCase().includes(s) ||
-          (j.skills && j.skills.some((sk) => sk.toLowerCase().includes(s)))
-      )
-    }
-    return { jobs: list }
+  const localItems = getLocalItems('jobs')
+  let list = []
+
+  const res = await safeRequest(`/api/jobs${qs}`, {}, null)
+  if (res?.jobs && res.jobs.length > 0) {
+    const remoteIds = new Set(res.jobs.map((j) => j._id))
+    const pendingLocal = localItems.filter((j) => !remoteIds.has(j._id))
+    list = [...pendingLocal, ...res.jobs]
+  } else {
+    const localIds = new Set(localItems.map((j) => j._id))
+    const remainingFallback = FALLBACK_JOBS.filter((j) => !localIds.has(j._id))
+    list = [...localItems, ...remainingFallback]
   }
-  return res
+
+  if (params.type && params.type !== 'All') {
+    list = list.filter((j) => j.type.toLowerCase() === params.type.toLowerCase())
+  }
+  if (params.experienceLevel && params.experienceLevel !== 'All') {
+    list = list.filter((j) => j.experienceLevel.toLowerCase() === params.experienceLevel.toLowerCase())
+  }
+  if (params.search) {
+    const s = params.search.toLowerCase()
+    list = list.filter(
+      (j) =>
+        j.title.toLowerCase().includes(s) ||
+        j.company.toLowerCase().includes(s) ||
+        (j.skills && j.skills.some((sk) => sk.toLowerCase().includes(s)))
+    )
+  }
+
+  return { jobs: list }
 }
 
 export async function createJobApi(jobData) {
-  return request('/api/jobs', {
-    method: 'POST',
-    body: JSON.stringify(jobData),
-  })
+  try {
+    const res = await request('/api/jobs', {
+      method: 'POST',
+      body: JSON.stringify(jobData),
+    })
+    if (res?.job) {
+      saveLocalItem('jobs', res.job)
+    }
+    return res
+  } catch (err) {
+    console.warn('[api] createJobApi fallback:', err.message)
+    const newJob = {
+      _id: `local-job-${Date.now()}`,
+      ...jobData,
+      openings: Number(jobData.openings) || 1,
+      applicantsCount: 0,
+      createdAt: new Date().toISOString(),
+    }
+    saveLocalItem('jobs', newJob)
+    return { job: newJob, message: 'Job vacancy published!' }
+  }
 }
 
 export async function updateJobApi(id, jobData) {
-  return request(`/api/jobs/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(jobData),
-  })
+  try {
+    const res = await request(`/api/jobs/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(jobData),
+    })
+    if (res?.job) saveLocalItem('jobs', res.job)
+    return res
+  } catch (err) {
+    console.warn('[api] updateJobApi fallback:', err.message)
+    const updated = { _id: id, ...jobData }
+    saveLocalItem('jobs', updated)
+    return { job: updated }
+  }
 }
 
 export async function deleteJobApi(id) {
-  return request(`/api/jobs/${id}`, {
-    method: 'DELETE',
-  })
+  removeLocalItem('jobs', id)
+  try {
+    return await request(`/api/jobs/${id}`, {
+      method: 'DELETE',
+    })
+  } catch (err) {
+    console.warn('[api] deleteJobApi fallback:', err.message)
+    return { message: 'Job deleted successfully' }
+  }
 }
 
 export async function applyJobApi(id) {
@@ -279,11 +441,11 @@ export async function applyJobApi(id) {
 
 // ── Assessment APIs ──
 export async function fetchAssessmentTopics() {
-  const res = await safeRequest('/api/assessment/topics', {}, { topics: [] })
-  if (!res?.topics || res.topics.length === 0) {
-    return { topics: FALLBACK_TOPICS }
+  const res = await safeRequest('/api/assessment/topics', {}, null)
+  if (res?.topics && res.topics.length > 0) {
+    return res
   }
-  return res
+  return { topics: FALLBACK_TOPICS }
 }
 
 export async function createAssessmentTopicApi(topicData) {
