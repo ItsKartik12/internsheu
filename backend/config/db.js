@@ -8,16 +8,29 @@ try {
   // fallback to system resolver
 }
 
-// Not called from server.js yet — the app currently runs entirely on the
-// mock data in data/studentDashboard.js, and that keeps working with zero
-// setup. Call connectDB() from server.js once MONGODB_URI is set and you're
-// ready to switch routes over to the models in ../models.
+let cachedConnection = null
+
 export async function connectDB() {
-  const uri = process.env.MONGODB_URI
-  if (!uri) {
-    throw new Error('MONGODB_URI is not set — add it to your .env file')
+  if (mongoose.connection.readyState >= 1) {
+    return mongoose.connection
   }
 
-  await mongoose.connect(uri)
-  console.log('MongoDB connected')
+  const uri = process.env.MONGODB_URI
+  if (!uri) {
+    console.warn('[db] MONGODB_URI is not set.')
+    return null
+  }
+
+  if (!cachedConnection) {
+    cachedConnection = mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 5000,
+    }).catch((err) => {
+      cachedConnection = null
+      console.warn('[db] MongoDB connection error:', err.message)
+      throw err
+    })
+  }
+
+  await cachedConnection
+  return mongoose.connection
 }
