@@ -1,4 +1,5 @@
 import Job from '../models/Job.js'
+import JobLink from '../models/JobLink.js'
 
 /**
  * GET /api/jobs
@@ -32,12 +33,34 @@ export async function getJobs(req, res, next) {
       ]
     }
 
-    const jobs = await Job.find(filter)
-      .populate('industryId', 'name email')
-      .sort({ createdAt: -1 })
-      .lean()
+    const [jobs, jobLinks] = await Promise.all([
+      Job.find(filter).populate('industryId', 'name email').sort({ createdAt: -1 }).lean(),
+      JobLink.find(
+        industryId ? { industryId, isActive: true } : { isActive: true }
+      ).populate('industryId', 'name email').sort({ createdAt: -1 }).lean(),
+    ])
 
-    res.json({ jobs })
+    // Format job links to match job card representation
+    const formattedLinks = jobLinks.map((link) => ({
+      _id: link._id,
+      title: link.title,
+      company: link.company,
+      industryId: link.industryId,
+      location: link.location,
+      type: link.jobType || link.workMode || 'Full-time',
+      experienceLevel: 'Entry Level',
+      salary: 'External Opportunity',
+      skills: link.skills || [],
+      description: link.description || '',
+      jobUrl: link.jobUrl,
+      companyWebsite: link.companyWebsite || '',
+      deadline: link.deadline,
+      isJobLink: true,
+      createdAt: link.createdAt,
+      updatedAt: link.updatedAt,
+    }))
+
+    res.json({ jobs: [...formattedLinks, ...jobs] })
   } catch (err) {
     next(err)
   }
@@ -48,9 +71,23 @@ export async function getJobs(req, res, next) {
  */
 export async function getJobById(req, res, next) {
   try {
-    const job = await Job.findById(req.params.id)
+    let job = await Job.findById(req.params.id)
       .populate('industryId', 'name email')
       .lean()
+
+    if (!job) {
+      // Fallback search in JobLink
+      const jobLink = await JobLink.findById(req.params.id)
+        .populate('industryId', 'name email')
+        .lean()
+      if (jobLink) {
+        job = {
+          ...jobLink,
+          type: jobLink.jobType || 'Full-time',
+          isJobLink: true,
+        }
+      }
+    }
 
     if (!job) {
       return res.status(404).json({ error: 'Job not found' })
@@ -63,10 +100,16 @@ export async function getJobById(req, res, next) {
 }
 
 /**
- * POST /api/jobs (industry, admin)
+ * POST /api/jobs (admin only)
  */
 export async function createJob(req, res, next) {
   try {
+    if (req.user.role === 'industry') {
+      return res.status(403).json({
+        error: 'Industry Partners do not have permission to create full job postings. Please use Add Job Link.',
+      })
+    }
+
     const { title, company, description, skills, location, type, experienceLevel, salary, deadline, openings } = req.body
 
     if (!title || !description || !location) {

@@ -11,8 +11,17 @@ async function start() {
   } catch (err) {
     console.warn(`[db] MongoDB note: ${err.message}. To connect to Cluster0/internsetu, configure MONGODB_URI in backend/.env`)
   }
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`internsheu API listening on http://localhost:${PORT}`)
+  })
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[server] Port ${PORT} is already in use. Please stop the existing process or set a different PORT in .env`)
+    } else {
+      console.error('[server] Error starting server:', err)
+    }
+    process.exit(1)
   })
 }
 

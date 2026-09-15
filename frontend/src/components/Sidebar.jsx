@@ -1,7 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
-  Radar,
   Briefcase,
   FileText,
   MessageSquare,
@@ -12,17 +11,17 @@ import {
   Sparkles,
   Building2,
   X,
+  UserCircle,
 } from 'lucide-react'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/profile', label: 'My Profile', icon: UserCircle },
   { to: '/courses', label: 'Verified Courses', icon: BookOpen },
   { to: '/internships', label: 'Internships', icon: Briefcase },
   { to: '/jobs', label: 'Career Jobs', icon: Building2 },
   { to: '/assessment', label: 'Skill Assessments', icon: Award },
   { to: '/assessment/results', label: 'Skill Matrix', icon: Sparkles },
-  { to: '/skill-gap', label: 'Skill Gap Analysis', icon: Radar },
-  { to: '/opportunities', label: 'Opportunity Feed', icon: Briefcase },
   { to: '/interview', label: 'AI Mock Interview', icon: Video },
   { to: '/learning', label: 'Learning Center', icon: BookOpen },
   { to: '/applications', label: 'Applications', icon: FileText },
@@ -67,7 +66,7 @@ function SidebarContent({ onNavigate, onClose }) {
             <GraduationCap size={20} className="text-teal-400" strokeWidth={2.25} />
           </div>
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-white">internsheu</p>
+            <p className="text-sm font-semibold text-white">internsetu</p>
             <p className="text-[11px] text-slate-500">Academia × Industry</p>
           </div>
         </div>
@@ -88,13 +87,6 @@ function SidebarContent({ onNavigate, onClose }) {
           <NavItem key={item.to} {...item} onNavigate={onNavigate} />
         ))}
       </nav>
-
-      <div className="mt-6 rounded-xl border border-white/5 bg-white/[0.03] p-3.5">
-        <p className="text-xs font-medium text-slate-300">SIH 2026 Build</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-          Connecting student potential with verified industry demand.
-        </p>
-      </div>
     </>
   )
 }

@@ -39,6 +39,8 @@ export default function InternshipsPage() {
   const [postDuration, setPostDuration] = useState('3 Months')
   const [postSkills, setPostSkills] = useState('')
   const [postDesc, setPostDesc] = useState('')
+  const [postApplicationUrl, setPostApplicationUrl] = useState('')
+  const [urlError, setUrlError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
@@ -74,30 +76,44 @@ export default function InternshipsPage() {
 
   async function handleCreateInternship(e) {
     e.preventDefault()
-    if (!postTitle.trim() || !postDesc.trim()) return
+    setUrlError('')
+    if (!postTitle.trim() || !postDesc.trim() || !postLocation.trim()) return
+
+    if (!postApplicationUrl.trim()) {
+      setUrlError('Application URL * is required.')
+      return
+    }
+
+    if (!/^https?:\/\/.+/i.test(postApplicationUrl.trim())) {
+      setUrlError('Please enter a valid Application URL starting with http:// or https://')
+      return
+    }
 
     setIsSubmitting(true)
     try {
       const payload = {
         title: postTitle.trim(),
-        company: postCompany.trim() || 'Nexus Tech',
+        company: postCompany.trim() || user?.name || 'Company',
         location: postLocation.trim(),
         type: postType,
         stipend: postStipend.trim(),
         duration: postDuration.trim(),
         skills: postSkills.split(',').map((s) => s.trim()).filter(Boolean),
         description: postDesc.trim(),
+        applicationUrl: postApplicationUrl.trim(),
       }
       await createInternshipApi(payload)
       setShowPostModal(false)
       setPostTitle('')
       setPostSkills('')
       setPostDesc('')
+      setPostApplicationUrl('')
+      setUrlError('')
       loadInternships()
       setMessage('Internship posting published successfully!')
       setTimeout(() => setMessage(''), 3500)
     } catch (err) {
-      alert(err.message || 'Failed to post internship')
+      setUrlError(err.message || 'Failed to post internship')
     } finally {
       setIsSubmitting(false)
     }
@@ -236,19 +252,25 @@ export default function InternshipsPage() {
                       <span>{item.applicantsCount || 0} applied</span>
                     </div>
 
-                    <button
-                      type="button"
-                      disabled={isApplied}
-                      onClick={(e) => handleApply(e, item._id)}
-                      className={`flex items-center gap-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                        isApplied
-                          ? 'bg-teal-100 text-teal-800'
-                          : 'bg-blue-600 text-white hover:bg-blue-500 shadow-sm'
-                      }`}
-                    >
-                      {isApplied ? 'Applied ✓' : 'Apply Now'}
-                      {!isApplied && <Send size={12} />}
-                    </button>
+                    {item.applicationUrl ? (
+                      <a
+                        href={item.applicationUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-500"
+                      >
+                        Visit & Apply ↗
+                      </a>
+                    ) : (
+                      <span
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400 cursor-not-allowed"
+                        title="Application link unavailable"
+                      >
+                        Application link unavailable
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -325,17 +347,24 @@ export default function InternshipsPage() {
               >
                 Close
               </button>
-              <button
-                type="button"
-                disabled={appliedIds.has(selectedItem._id)}
-                onClick={(e) => {
-                  handleApply(e, selectedItem._id)
-                  setSelectedItem(null)
-                }}
-                className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-semibold text-white shadow hover:bg-blue-500 disabled:opacity-50"
-              >
-                {appliedIds.has(selectedItem._id) ? 'Already Applied' : 'Submit Application'}
-              </button>
+              {selectedItem.applicationUrl ? (
+                <a
+                  href={selectedItem.applicationUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 rounded-xl bg-blue-600 px-5 py-2 text-xs font-semibold text-white shadow hover:bg-blue-500"
+                >
+                  Visit & Apply ↗
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-xl bg-slate-100 px-5 py-2 text-xs font-semibold text-slate-400 cursor-not-allowed"
+                >
+                  Application link unavailable
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -348,7 +377,7 @@ export default function InternshipsPage() {
           onClick={() => setShowPostModal(false)}
         >
           <div
-            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -365,9 +394,15 @@ export default function InternshipsPage() {
               </button>
             </div>
 
+            {urlError && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-medium text-rose-700">
+                <span>{urlError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleCreateInternship} className="mt-4 space-y-3">
               <div>
-                <label className="text-xs font-medium text-slate-700">Internship Title</label>
+                <label className="text-xs font-medium text-slate-700">Internship Title *</label>
                 <input
                   type="text"
                   required
@@ -380,7 +415,7 @@ export default function InternshipsPage() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs font-medium text-slate-700">Company Name</label>
+                  <label className="text-xs font-medium text-slate-700">Company Name *</label>
                   <input
                     type="text"
                     required
@@ -405,7 +440,7 @@ export default function InternshipsPage() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs font-medium text-slate-700">Location</label>
+                  <label className="text-xs font-medium text-slate-700">Location *</label>
                   <input
                     type="text"
                     required
@@ -428,6 +463,23 @@ export default function InternshipsPage() {
               </div>
 
               <div>
+                <label className="text-xs font-medium text-slate-700">
+                  Application URL * <span className="text-[11px] text-slate-400">(External company apply link)</span>
+                </label>
+                <input
+                  type="url"
+                  required
+                  value={postApplicationUrl}
+                  onChange={(e) => {
+                    setPostApplicationUrl(e.target.value)
+                    setUrlError('')
+                  }}
+                  placeholder="https://company.com/careers/intern"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
                 <label className="text-xs font-medium text-slate-700">Required Skills (comma separated)</label>
                 <input
                   type="text"
@@ -439,7 +491,7 @@ export default function InternshipsPage() {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-700">Description</label>
+                <label className="text-xs font-medium text-slate-700">Description *</label>
                 <textarea
                   rows={3}
                   required

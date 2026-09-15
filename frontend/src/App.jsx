@@ -19,43 +19,34 @@ import EducatorDashboard from './components/EducatorDashboard'
 import IndustryDashboard from './components/IndustryDashboard'
 import AssessmentPage from './components/AssessmentPage'
 import SkillResultsPage from './components/SkillResultsPage'
+import StudentProfile from './components/StudentProfile'
 
 import { AuthProvider, useAuth } from './context/AuthContext'
-import { getStudentById, getStudentSkillProfile } from './data/mockDatabase'
 
 function useCurrentStudent(user) {
   if (!user) return null
-  const base = getStudentById(user.studentId || 'STU-001')
-  const defaultSkills = getStudentSkillProfile('STU-001')
 
-  if (base) {
-    return {
-      ...base,
-      name: user.name || base.name,
-      email: user.email || base.email,
-      enrollmentNo: user.enrollmentNo || base.enrollmentNo,
-      branch: user.fieldMark || base.branch,
-      skills: defaultSkills,
-    }
-  }
+  const name = user.name || 'Student'
+  const initials = name
+    .split(' ')
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'ST'
 
   return {
-    id: user._id || 'STU-001',
-    name: user.name || 'Student',
-    enrollmentNo: user.enrollmentNo || '2024CS001',
-    email: user.email || 'student@internsheu.edu',
-    institute: 'Technical Institute of Engineering',
+    id: user._id || user.studentId || 'STU-001',
+    name,
+    email: user.email || '',
+    enrollmentNo: user.enrollmentNo || '',
     branch: user.fieldMark || 'Computer Science & Engineering',
-    semester: 6,
-    cgpa: 8.5,
-    targetRole: 'ROLE-003',
-    avatarInitials: (user.name || 'Student')
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .slice(0, 2)
-      .toUpperCase(),
-    skills: defaultSkills,
+    institute: user.institute || 'Engineering College',
+    semester: user.semester || 1,
+    cgpa: user.cgpa || 0,
+    targetRole: user.targetRole || 'ROLE-003',
+    avatarInitials: initials,
+    skills: user.skills || [],
   }
 }
 
@@ -296,6 +287,7 @@ function AppRoutes() {
       <Route element={<ProtectedRoute allowedRoles={['student']} />}>
         <Route element={<StudentLayout />}>
           <Route path="/" element={<StudentDashboardRoute />} />
+          <Route path="/profile" element={<StudentProfile />} />
           <Route path="/courses" element={<CoursesPage />} />
           <Route path="/internships" element={<InternshipsPage />} />
           <Route path="/jobs" element={<JobsPage />} />

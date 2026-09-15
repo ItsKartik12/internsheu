@@ -247,29 +247,27 @@ export async function fetchInternships(params = {}) {
   if (params.industryId) query.set('industryId', params.industryId)
   const qs = query.toString() ? `?${query.toString()}` : ''
 
-  const localItems = getLocalItems('internships')
+  const res = await safeRequest(`/api/internships${qs}`, {}, null)
   let list = []
 
-  const res = await safeRequest(`/api/internships${qs}`, {}, null)
-  if (res?.internships && res.internships.length > 0) {
-    const remoteIds = new Set(res.internships.map((i) => i._id))
-    const pendingLocal = localItems.filter((i) => !remoteIds.has(i._id))
-    list = [...pendingLocal, ...res.internships]
+  if (res && Array.isArray(res.internships)) {
+    // Live backend response from MongoDB
+    list = res.internships
   } else {
-    const localIds = new Set(localItems.map((i) => i._id))
-    const remainingFallback = FALLBACK_INTERNSHIPS.filter((i) => !localIds.has(i._id))
-    list = [...localItems, ...remainingFallback]
+    // Only if backend is completely offline/unreachable
+    const localItems = getLocalItems('internships')
+    list = localItems.length > 0 ? localItems : []
   }
 
   if (params.type && params.type !== 'All') {
-    list = list.filter((i) => i.type.toLowerCase() === params.type.toLowerCase())
+    list = list.filter((i) => (i.type || '').toLowerCase() === params.type.toLowerCase())
   }
   if (params.search) {
     const s = params.search.toLowerCase()
     list = list.filter(
       (i) =>
-        i.title.toLowerCase().includes(s) ||
-        i.company.toLowerCase().includes(s) ||
+        (i.title || '').toLowerCase().includes(s) ||
+        (i.company || '').toLowerCase().includes(s) ||
         (i.skills && i.skills.some((sk) => sk.toLowerCase().includes(s)))
     )
   }
@@ -348,32 +346,30 @@ export async function fetchJobs(params = {}) {
   if (params.industryId) query.set('industryId', params.industryId)
   const qs = query.toString() ? `?${query.toString()}` : ''
 
-  const localItems = getLocalItems('jobs')
+  const res = await safeRequest(`/api/jobs${qs}`, {}, null)
   let list = []
 
-  const res = await safeRequest(`/api/jobs${qs}`, {}, null)
-  if (res?.jobs && res.jobs.length > 0) {
-    const remoteIds = new Set(res.jobs.map((j) => j._id))
-    const pendingLocal = localItems.filter((j) => !remoteIds.has(j._id))
-    list = [...pendingLocal, ...res.jobs]
+  if (res && Array.isArray(res.jobs)) {
+    // Live backend response from MongoDB
+    list = res.jobs
   } else {
-    const localIds = new Set(localItems.map((j) => j._id))
-    const remainingFallback = FALLBACK_JOBS.filter((j) => !localIds.has(j._id))
-    list = [...localItems, ...remainingFallback]
+    // Only if backend is completely offline/unreachable
+    const localItems = getLocalItems('jobs')
+    list = localItems.length > 0 ? localItems : []
   }
 
   if (params.type && params.type !== 'All') {
-    list = list.filter((j) => j.type.toLowerCase() === params.type.toLowerCase())
+    list = list.filter((j) => (j.type || '').toLowerCase() === params.type.toLowerCase())
   }
   if (params.experienceLevel && params.experienceLevel !== 'All') {
-    list = list.filter((j) => j.experienceLevel.toLowerCase() === params.experienceLevel.toLowerCase())
+    list = list.filter((j) => (j.experienceLevel || '').toLowerCase() === params.experienceLevel.toLowerCase())
   }
   if (params.search) {
     const s = params.search.toLowerCase()
     list = list.filter(
       (j) =>
-        j.title.toLowerCase().includes(s) ||
-        j.company.toLowerCase().includes(s) ||
+        (j.title || '').toLowerCase().includes(s) ||
+        (j.company || '').toLowerCase().includes(s) ||
         (j.skills && j.skills.some((sk) => sk.toLowerCase().includes(s)))
     )
   }
@@ -392,16 +388,8 @@ export async function createJobApi(jobData) {
     }
     return res
   } catch (err) {
-    console.warn('[api] createJobApi fallback:', err.message)
-    const newJob = {
-      _id: `local-job-${Date.now()}`,
-      ...jobData,
-      openings: Number(jobData.openings) || 1,
-      applicantsCount: 0,
-      createdAt: new Date().toISOString(),
-    }
-    saveLocalItem('jobs', newJob)
-    return { job: newJob, message: 'Job vacancy published!' }
+    console.warn('[api] createJobApi error:', err.message)
+    throw err
   }
 }
 
@@ -441,13 +429,86 @@ export async function applyJobApi(id) {
   )
 }
 
+// ── Job Links APIs ──
+export async function fetchJobLinks(params = {}) {
+  const query = new URLSearchParams()
+  if (params.search) query.set('search', params.search)
+  if (params.location) query.set('location', params.location)
+  if (params.workMode) query.set('workMode', params.workMode)
+  if (params.jobType) query.set('jobType', params.jobType)
+  if (params.industryId) query.set('industryId', params.industryId)
+  const qs = query.toString() ? `?${query.toString()}` : ''
+
+  const res = await safeRequest(`/api/job-links${qs}`, {}, null)
+  let list = []
+
+  if (res && Array.isArray(res.jobLinks)) {
+    list = res.jobLinks
+  } else {
+    const localItems = getLocalItems('job_links')
+    list = localItems.length > 0 ? localItems : []
+  }
+
+  return { jobLinks: list }
+}
+
+export async function createJobLinkApi(jobLinkData) {
+  try {
+    const res = await request('/api/job-links', {
+      method: 'POST',
+      body: JSON.stringify(jobLinkData),
+    })
+    if (res?.jobLink) {
+      saveLocalItem('job_links', res.jobLink)
+    }
+    return res
+  } catch (err) {
+    console.warn('[api] createJobLinkApi fallback:', err.message)
+    const newJobLink = {
+      _id: `local-jl-${Date.now()}`,
+      ...jobLinkData,
+      createdAt: new Date().toISOString(),
+    }
+    saveLocalItem('job_links', newJobLink)
+    return { jobLink: newJobLink, message: 'Job link published successfully!' }
+  }
+}
+
+export async function updateJobLinkApi(id, jobLinkData) {
+  try {
+    const res = await request(`/api/job-links/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(jobLinkData),
+    })
+    if (res?.jobLink) saveLocalItem('job_links', res.jobLink)
+    return res
+  } catch (err) {
+    console.warn('[api] updateJobLinkApi fallback:', err.message)
+    const updated = { _id: id, ...jobLinkData }
+    saveLocalItem('job_links', updated)
+    return { jobLink: updated }
+  }
+}
+
+export async function deleteJobLinkApi(id) {
+  removeLocalItem('job_links', id)
+  try {
+    return await request(`/api/job-links/${id}`, {
+      method: 'DELETE',
+    })
+  } catch (err) {
+    console.warn('[api] deleteJobLinkApi fallback:', err.message)
+    return { message: 'Job link deleted successfully' }
+  }
+}
+
 // ── Assessment APIs ──
 export async function fetchAssessmentTopics() {
   const res = await safeRequest('/api/assessment/topics', {}, null)
-  if (res?.topics && res.topics.length > 0) {
+  if (res && Array.isArray(res.topics)) {
     return res
   }
-  return { topics: FALLBACK_TOPICS }
+  return { topics: [] }
 }
 
 export async function createAssessmentTopicApi(topicData) {
@@ -521,6 +582,47 @@ export async function fetchAllStudentResults() {
   return safeRequest('/api/assessment/results/all', {}, { results: [] })
 }
 
+// ── Student Profile APIs ──
+export async function fetchProfile() {
+  const data = await safeRequest('/api/profile', {}, null)
+  if (data && data.profile) {
+    try {
+      localStorage.setItem('internsheu_profile_cache', JSON.stringify(data))
+    } catch {}
+    return data
+  }
+  try {
+    const cached = localStorage.getItem('internsheu_profile_cache')
+    if (cached) return JSON.parse(cached)
+  } catch {}
+  return data
+}
+
+export async function updateProfileApi(profileData) {
+  try {
+    const result = await request('/api/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profileData),
+    })
+    try {
+      localStorage.setItem('internsheu_profile_cache', JSON.stringify(result))
+    } catch {}
+    return result
+  } catch (err) {
+    if (err.status === 400) throw err
+
+    const fallbackResult = {
+      profile: profileData,
+      completionPercentage: 80,
+      message: 'Profile saved locally',
+    }
+    try {
+      localStorage.setItem('internsheu_profile_cache', JSON.stringify(fallbackResult))
+    } catch {}
+    return fallbackResult
+  }
+}
+
 // ── Student dashboard & connectivity ──
 export async function fetchStudentDashboard() {
   return safeRequest('/api/student/dashboard')
@@ -531,7 +633,53 @@ export async function pingApi() {
   return result?.status === 'ok'
 }
 
+// ── Videos & Curated Content APIs ──
+export async function fetchVideos(params = {}) {
+  const query = new URLSearchParams()
+  if (params.search) query.set('search', params.search)
+  if (params.status) query.set('status', params.status)
+  if (params.tag) query.set('tag', params.tag)
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  const res = await safeRequest(`/api/videos${qs}`, {}, null)
+  return { videos: Array.isArray(res?.videos) ? res.videos : [] }
+}
+
+export async function createVideoApi(videoData) {
+  return request('/api/videos', {
+    method: 'POST',
+    body: JSON.stringify(videoData),
+  })
+}
+
+export async function updateVideoApi(id, videoData) {
+  return request(`/api/videos/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(videoData),
+  })
+}
+
+export async function deleteVideoApi(id) {
+  return request(`/api/videos/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+// ── Admin Dashboard Statistics ──
+export async function fetchAdminStats() {
+  return safeRequest('/api/admin/stats', {}, {
+    totalStudents: 0,
+    activeInternships: 0,
+    activeJobLinks: 0,
+    partnerCompanies: 0,
+    totalAssessments: 0,
+    placementRate: null,
+    departmentBreakdown: [],
+    recentActivity: [],
+  })
+}
+
 export const apiConfig = {
   baseUrl: API_BASE_URL,
   isConfigured: Boolean(API_BASE_URL),
 }
+

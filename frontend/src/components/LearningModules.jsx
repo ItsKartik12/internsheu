@@ -1,58 +1,32 @@
 import { useEffect, useState } from 'react'
-import { Play, Clock3, X, BookOpen } from 'lucide-react'
+import { Play, Clock3, X, BookOpen, Loader2, AlertCircle, Video } from 'lucide-react'
+import { fetchVideos } from '../services/api'
 
-// Mock catalog — swap youtubeId for real content, or add a `videoUrl` field
-// and branch the player src in VideoModal if you move to a custom CDN.
-const LEARNING_MODULES = [
-  {
-    id: 'LM-01',
-    title: 'Cloud Architecture Fundamentals: AWS vs Azure',
-    publisher: 'Zenith Cloud Labs',
-    duration: '18 min',
-    category: 'Cloud & DevOps',
-    youtubeId: 'M7lc1UVf-VE',
-  },
-  {
-    id: 'LM-02',
-    title: 'System Design Interviews: Scaling a REST API',
-    publisher: 'Nexora Analytics',
-    duration: '24 min',
-    category: 'Core CS',
-    youtubeId: 'UzLMhqg3_Wc',
-  },
-  {
-    id: 'LM-03',
-    title: 'Containers 101: Docker & CI/CD Pipelines',
-    publisher: 'Zenith Cloud Labs',
-    duration: '15 min',
-    category: 'Cloud & DevOps',
-    youtubeId: '3c-iBn73dDE',
-  },
-  {
-    id: 'LM-04',
-    title: 'Advanced Database Modeling for Production Systems',
-    publisher: 'Bharat FinTech Works',
-    duration: '21 min',
-    category: 'Data',
-    youtubeId: 'ztHopE5Wnpc',
-  },
-  {
-    id: 'LM-05',
-    title: 'Data Structures & Algorithms: Graph Traversal Patterns',
-    publisher: 'Kavach Systems',
-    duration: '27 min',
-    category: 'Core CS',
-    youtubeId: 'tWVWeAqZ0WU',
-  },
-  {
-    id: 'LM-06',
-    title: 'Cracking the Technical Interview: Communication Skills',
-    publisher: 'Orbit Mobility',
-    duration: '12 min',
-    category: 'Career Readiness',
-    youtubeId: 'HG68Ymazo18',
-  },
-]
+function extractYoutubeId(input) {
+  if (!input) return ''
+  const trimmed = input.trim()
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=)([\w-]{11})/,
+    /(?:youtu\.be\/)([\w-]{11})/,
+    /(?:youtube\.com\/embed\/)([\w-]{11})/,
+  ]
+  for (const pattern of patterns) {
+    const match = trimmed.match(pattern)
+    if (match) return match[1]
+  }
+  return /^[\w-]{11}$/.test(trimmed) ? trimmed : ''
+}
+
+function getThumbnail(module) {
+  if (module.thumbnail && module.thumbnail.trim()) {
+    return module.thumbnail.trim()
+  }
+  const ytId = module.youtubeId || extractYoutubeId(module.videoUrl)
+  if (ytId) {
+    return `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
+  }
+  return ''
+}
 
 function VideoModal({ module, onClose }) {
   useEffect(() => {
@@ -62,6 +36,8 @@ function VideoModal({ module, onClose }) {
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
   }, [onClose])
+
+  const ytId = module.youtubeId || extractYoutubeId(module.videoUrl)
 
   return (
     <div
@@ -75,7 +51,9 @@ function VideoModal({ module, onClose }) {
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">{module.title}</h2>
-            <p className="mt-0.5 text-xs text-slate-500">{module.publisher} · {module.duration}</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {module.publisher} · {module.duration}
+            </p>
           </div>
           <button
             type="button"
@@ -87,14 +65,32 @@ function VideoModal({ module, onClose }) {
           </button>
         </div>
         <div className="aspect-video w-full bg-slate-900">
-          <iframe
-            className="h-full w-full"
-            src={`https://www.youtube.com/embed/${module.youtubeId}?autoplay=1`}
-            title={module.title}
-            frameBorder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
+          {ytId ? (
+            <iframe
+              className="h-full w-full"
+              src={`https://www.youtube.com/embed/${ytId}?autoplay=1`}
+              title={module.title}
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          ) : module.videoUrl ? (
+            <div className="flex h-full w-full flex-col items-center justify-center p-6 text-white text-center">
+              <p className="text-sm">This video is hosted externally:</p>
+              <a
+                href={module.videoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+              >
+                Open External Video ↗
+              </a>
+            </div>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+              Video stream unavailable
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -102,6 +98,12 @@ function VideoModal({ module, onClose }) {
 }
 
 function ModuleCard({ module, onOpen }) {
+  const thumbnail = getThumbnail(module)
+  const categoryLabel =
+    (module.tags && module.tags[0]) ||
+    (module.fieldMarks && module.fieldMarks[0]) ||
+    'Learning Module'
+
   return (
     <button
       type="button"
@@ -109,11 +111,17 @@ function ModuleCard({ module, onOpen }) {
       className="group text-left rounded-xl border border-slate-200 bg-white shadow-card transition-shadow hover:shadow-md"
     >
       <div className="relative aspect-video overflow-hidden rounded-t-xl bg-slate-900">
-        <img
-          src={`https://img.youtube.com/vi/${module.youtubeId}/hqdefault.jpg`}
-          alt=""
-          className="h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-60"
-        />
+        {thumbnail ? (
+          <img
+            src={thumbnail}
+            alt=""
+            className="h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-60"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-slate-800 text-slate-400">
+            <Video size={32} />
+          </div>
+        )}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-indigo-600 shadow-md transition-transform group-hover:scale-105">
             <Play size={18} fill="currentColor" />
@@ -124,8 +132,12 @@ function ModuleCard({ module, onOpen }) {
         </span>
       </div>
       <div className="p-4">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-indigo-600">{module.category}</p>
-        <h3 className="mt-1 text-sm font-semibold leading-snug text-slate-900">{module.title}</h3>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-indigo-600">
+          {categoryLabel}
+        </p>
+        <h3 className="mt-1 text-sm font-semibold leading-snug text-slate-900 line-clamp-2">
+          {module.title}
+        </h3>
         <p className="mt-1.5 text-xs text-slate-500">{module.publisher}</p>
       </div>
     </button>
@@ -133,7 +145,29 @@ function ModuleCard({ module, onOpen }) {
 }
 
 export default function LearningModules() {
+  const [modules, setModules] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [activeModule, setActiveModule] = useState(null)
+
+  async function loadVideos() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetchVideos({ status: 'Published' })
+      const list = (res?.videos || []).filter((v) => v.status !== 'Draft')
+      setModules(list)
+    } catch (err) {
+      console.error('[LearningCenter] Failed to load videos:', err)
+      setError(err.message || 'Failed to load learning videos')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadVideos()
+  }, [])
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -144,25 +178,58 @@ export default function LearningModules() {
           </div>
           <div>
             <h1 className="text-lg font-semibold text-slate-900">Learning Center</h1>
-            <p className="text-sm text-slate-500">Curated by partner companies to close your skill gaps.</p>
+            <p className="text-sm text-slate-500">
+              Curated by partner companies and administrators to close your skill gaps.
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {LEARNING_MODULES.map((module) => (
-          <ModuleCard key={module.id} module={module} onOpen={setActiveModule} />
-        ))}
-      </div>
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+          <p className="mt-3 text-xs">Loading learning modules from database...</p>
+        </div>
+      ) : error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center">
+          <AlertCircle className="mx-auto h-8 w-8 text-red-500" />
+          <p className="mt-2 text-sm font-medium text-red-800">{error}</p>
+          <button
+            type="button"
+            onClick={loadVideos}
+            className="mt-3 rounded-lg bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
+          >
+            Retry
+          </button>
+        </div>
+      ) : modules.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center shadow-sm">
+          <Video className="h-10 w-10 text-slate-300" />
+          <h3 className="mt-3 text-base font-semibold text-slate-800">
+            No learning videos available yet
+          </h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Check back soon as administrators add new learning content.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {modules.map((module) => (
+            <ModuleCard key={module._id} module={module} onOpen={setActiveModule} />
+          ))}
+        </div>
+      )}
 
       {activeModule && (
         <VideoModal module={activeModule} onClose={() => setActiveModule(null)} />
       )}
 
-      <div className="flex items-center gap-1.5 text-xs text-slate-400">
-        <Clock3 size={12} />
-        Total watch time in catalog: {LEARNING_MODULES.length} modules
-      </div>
+      {!loading && !error && modules.length > 0 && (
+        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+          <Clock3 size={12} />
+          Total videos available: {modules.length} modules
+        </div>
+      )}
     </div>
   )
 }

@@ -3,8 +3,12 @@ import { Bell, ChevronRight, LogOut, Menu } from 'lucide-react'
 
 const routeMeta = {
   '/': { section: 'Overview', page: 'Dashboard' },
-  '/skill-gap': { section: 'Growth', page: 'Skill Gap Analysis' },
-  '/opportunities': { section: 'Growth', page: 'Opportunity Feed' },
+  '/profile': { section: 'Profile', page: 'Student Profile' },
+  '/courses': { section: 'Academics', page: 'Verified Courses' },
+  '/internships': { section: 'Opportunities', page: 'Internships' },
+  '/jobs': { section: 'Opportunities', page: 'Career Jobs' },
+  '/assessment': { section: 'Assessments', page: 'Skill Assessments' },
+  '/assessment/results': { section: 'Assessments', page: 'Skill Matrix' },
   '/interview': { section: 'Growth', page: 'AI Mock Interview' },
   '/learning': { section: 'Growth', page: 'Learning Center' },
   '/applications': { section: 'Tracking', page: 'Applications' },
@@ -49,11 +53,11 @@ export default function Header({ student, onLogout, onMenuClick }) {
 
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white">
-            {student.avatarInitials}
+            {student?.avatarInitials || 'ST'}
           </div>
           <div className="hidden leading-tight sm:block">
-            <p className="text-sm font-medium text-slate-900">{student.name}</p>
-            <p className="text-xs text-slate-500">{student.branch}</p>
+            <p className="text-sm font-medium text-slate-900">{student?.name || 'Student'}</p>
+            <p className="text-xs text-slate-500">{student?.branch || ''}</p>
           </div>
         </div>
 

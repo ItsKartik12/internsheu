@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Users,
   TrendingUp,
@@ -15,96 +15,38 @@ import {
   X,
   PlayCircle,
   MapPin,
-  IndianRupee,
+  ExternalLink,
   Award,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
 } from 'lucide-react'
 import AdminAssessmentManager from './AdminAssessmentManager'
 import {
-  adminOverview,
-  departmentBreakdown,
-  recentPlacementActivity,
-  skills as skillCatalog,
-} from '../data/mockDatabase'
+  fetchVideos,
+  createVideoApi,
+  updateVideoApi,
+  deleteVideoApi,
+  fetchJobLinks,
+  createJobLinkApi,
+  updateJobLinkApi,
+  deleteJobLinkApi,
+  fetchAdminStats,
+} from '../services/api'
 
-// ────────────────────────────────────────────────────────────────────────
-// Seed data — the admin's own working copies. In production these would be
-// fetched from /api/admin/videos and /api/admin/jobs; kept local to this
-// component with useState so Add/Edit/Delete are fully functional for the
-// demo without a backend.
-// ────────────────────────────────────────────────────────────────────────
-
-const INITIAL_VIDEOS = [
-  {
-    id: 'LM-01',
-    title: 'Cloud Architecture Fundamentals: AWS vs Azure',
-    publisher: 'Zenith Cloud Labs',
-    duration: '18 min',
-    youtubeId: 'M7lc1UVf-VE',
-    status: 'Published',
-  },
-  {
-    id: 'LM-02',
-    title: 'System Design Interviews: Scaling a REST API',
-    publisher: 'Nexora Analytics',
-    duration: '24 min',
-    youtubeId: 'UzLMhqg3_Wc',
-    status: 'Published',
-  },
-  {
-    id: 'LM-03',
-    title: 'Containers 101: Docker & CI/CD Pipelines',
-    publisher: 'Zenith Cloud Labs',
-    duration: '15 min',
-    youtubeId: '3c-iBn73dDE',
-    status: 'Published',
-  },
-  {
-    id: 'LM-04',
-    title: 'Advanced Database Modeling for Production Systems',
-    publisher: 'Bharat FinTech Works',
-    duration: '21 min',
-    youtubeId: 'ztHopE5Wnpc',
-    status: 'Draft',
-  },
-]
-
-const INITIAL_JOBS = [
-  {
-    id: 'OPP-101',
-    title: 'Backend Engineering Intern',
-    company: 'Bharat FinTech Works',
-    location: 'Gurugram, HR (Hybrid)',
-    stipend: '₹35,000/mo',
-    requiredSkillIds: ['SK-01', 'SK-03', 'SK-04'],
-    status: 'Active',
-  },
-  {
-    id: 'OPP-102',
-    title: 'Data Systems Intern',
-    company: 'Nexora Analytics',
-    location: 'Remote',
-    stipend: '₹28,000/mo',
-    requiredSkillIds: ['SK-02', 'SK-03', 'SK-09'],
-    status: 'Active',
-  },
-  {
-    id: 'OPP-103',
-    title: 'Cloud Infrastructure Intern',
-    company: 'Zenith Cloud Labs',
-    location: 'Bengaluru, KA (On-site)',
-    stipend: '₹40,000/mo',
-    requiredSkillIds: ['SK-05', 'SK-07', 'SK-06'],
-    status: 'Active',
-  },
-  {
-    id: 'OPP-104',
-    title: 'Software Development Intern',
-    company: 'Orbit Mobility',
-    location: 'Noida, UP (On-site)',
-    stipend: '₹25,000/mo',
-    requiredSkillIds: ['SK-01', 'SK-04', 'SK-02'],
-    status: 'Closed',
-  },
+const POPULAR_SKILLS = [
+  'React',
+  'Node.js',
+  'JavaScript',
+  'TypeScript',
+  'Python',
+  'Java',
+  'SQL',
+  'MongoDB',
+  'Docker',
+  'AWS',
+  'Cloud Architecture',
+  'System Design',
 ]
 
 const TABS = [
@@ -126,19 +68,14 @@ function extractYoutubeId(input) {
     const match = trimmed.match(pattern)
     if (match) return match[1]
   }
-  // Assume the admin pasted a bare video ID
-  return /^[\w-]{11}$/.test(trimmed) ? trimmed : trimmed
+  return /^[\w-]{11}$/.test(trimmed) ? trimmed : ''
 }
 
 function statusBadgeClass(status) {
-  if (status === 'Published' || status === 'Active') return 'bg-teal-50 text-teal-700'
-  if (status === 'Draft') return 'bg-amber-50 text-amber-700'
+  if (status === 'Published' || status === 'Active' || status === true) return 'bg-teal-50 text-teal-700'
+  if (status === 'Draft' || status === false) return 'bg-amber-50 text-amber-700'
   return 'bg-slate-100 text-slate-500'
 }
-
-// ────────────────────────────────────────────────────────────────────────
-// Shared modal shell
-// ────────────────────────────────────────────────────────────────────────
 
 function Modal({ title, description, onClose, children }) {
   return (
@@ -164,17 +101,17 @@ function Modal({ title, description, onClose, children }) {
             <X size={18} />
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">{children}</div>
+        <div className="max-h-[75vh] overflow-y-auto px-6 py-5">{children}</div>
       </div>
     </div>
   )
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Tab 1 — Overview
+// Tab 1 — Overview (Live MongoDB Data)
 // ────────────────────────────────────────────────────────────────────────
 
-function MetricCard({ label, value, growth, icon: Icon, accent }) {
+function MetricCard({ label, value, subtext, icon: Icon, accent }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-card">
       <div className="flex items-start justify-between">
@@ -184,45 +121,69 @@ function MetricCard({ label, value, growth, icon: Icon, accent }) {
         </div>
       </div>
       <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
-      <p className="mt-1 flex items-center gap-1 text-xs font-medium text-teal-600">
-        <ArrowUpRight size={12} />
-        {growth}
-      </p>
+      {subtext && (
+        <p className="mt-1 flex items-center gap-1 text-xs font-medium text-slate-500">
+          {subtext}
+        </p>
+      )}
     </div>
   )
 }
 
 function OverviewTab() {
-  const maxStudents = Math.max(...departmentBreakdown.map((d) => d.students))
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function loadStats() {
+      setLoading(true)
+      const data = await fetchAdminStats()
+      setStats(data)
+      setLoading(false)
+    }
+    loadStats()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+      </div>
+    )
+  }
+
+  const deptList = stats?.departmentBreakdown || []
+  const maxStudents = deptList.length > 0 ? Math.max(...deptList.map((d) => d.students)) : 1
+  const recentActivities = stats?.recentActivity || []
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
-          label="Total students"
-          value={adminOverview.totalStudents.toLocaleString('en-IN')}
-          growth={adminOverview.studentGrowth}
+          label="Total registered students"
+          value={(stats?.totalStudents ?? 0).toLocaleString('en-IN')}
+          subtext="Verified student accounts"
           icon={Users}
           accent="bg-indigo-50 text-indigo-600"
         />
         <MetricCard
           label="Placement rate"
-          value={`${adminOverview.placementRate}%`}
-          growth={adminOverview.placementGrowth}
+          value={stats?.placementRate ? `${stats.placementRate}%` : 'N/A'}
+          subtext={stats?.placementRate ? 'Overall placement rate' : 'No placement records yet'}
           icon={TrendingUp}
           accent="bg-teal-50 text-teal-600"
         />
         <MetricCard
           label="Active internships"
-          value={adminOverview.activeInternships}
-          growth={adminOverview.internshipGrowth}
+          value={(stats?.activeInternships ?? 0).toLocaleString('en-IN')}
+          subtext="Live industry opportunities"
           icon={Briefcase}
           accent="bg-slate-100 text-slate-600"
         />
         <MetricCard
           label="Partner companies"
-          value={adminOverview.partnerCompanies}
-          growth={adminOverview.partnerGrowth}
+          value={(stats?.partnerCompanies ?? 0).toLocaleString('en-IN')}
+          subtext="Registered industry partners"
           icon={Building2}
           accent="bg-indigo-50 text-indigo-600"
         />
@@ -231,54 +192,58 @@ function OverviewTab() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card lg:col-span-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">Placement by department</h2>
-            <button type="button" className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-500">
-              Full report
-              <ArrowRight size={12} />
-            </button>
+            <h2 className="text-sm font-semibold text-slate-900">Students by Department</h2>
+            <span className="text-xs text-slate-400">Database Breakdown</span>
           </div>
-          <div className="mt-5 space-y-5">
-            {departmentBreakdown.map((dept) => (
-              <div key={dept.department}>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-slate-800">{dept.department}</span>
-                  <span className="text-slate-500">{dept.students.toLocaleString('en-IN')} students · {dept.placementRate}%</span>
+          {deptList.length > 0 ? (
+            <div className="mt-5 space-y-5">
+              {deptList.map((dept) => (
+                <div key={dept.department}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-slate-800">{dept.department}</span>
+                    <span className="text-slate-500">
+                      {dept.students.toLocaleString('en-IN')} students
+                    </span>
+                  </div>
+                  <div className="relative mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-indigo-500"
+                      style={{ width: `${Math.min(100, (dept.students / maxStudents) * 100)}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="relative mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full bg-slate-300"
-                    style={{ width: `${(dept.students / maxStudents) * 100}%` }}
-                  />
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full bg-indigo-500"
-                    style={{ width: `${(dept.students / maxStudents) * (dept.placementRate / 100) * 100}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 text-[11px] text-slate-400">
-            Bar length reflects student headcount; the indigo fill shows the placed share within it.
-          </p>
+              ))}
+            </div>
+          ) : (
+            <div className="py-12 text-center text-sm text-slate-400">
+              No department student records found in database yet.
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card lg:col-span-2">
-          <h2 className="text-sm font-semibold text-slate-900">Recent placement activity</h2>
-          <ul className="mt-4 divide-y divide-slate-100">
-            {recentPlacementActivity.map((activity) => (
-              <li key={activity.id} className="py-3.5 first:pt-0 last:pb-0">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">{activity.studentName}</p>
-                    <p className="text-xs text-slate-500">{activity.role} · {activity.company}</p>
+          <h2 className="text-sm font-semibold text-slate-900">Recent Student Assessments</h2>
+          {recentActivities.length > 0 ? (
+            <ul className="mt-4 divide-y divide-slate-100">
+              {recentActivities.map((act) => (
+                <li key={act.id} className="py-3.5 first:pt-0 last:pb-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{act.studentName}</p>
+                      <p className="text-xs text-slate-500">{act.role} · {act.company}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(act.status === 'Offer accepted')}`}>
+                      {act.status}
+                    </span>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(activity.status === 'Offer accepted' ? 'Active' : activity.status === 'Application submitted' ? 'Closed' : 'Draft')}`}>
-                    {activity.status}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="py-12 text-center text-sm text-slate-400">
+              No recent assessment activity recorded yet.
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -286,12 +251,19 @@ function OverviewTab() {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Tab 2 — Manage Learning Videos
+// Tab 2 — Manage Learning Videos (Connected to MongoDB /api/videos)
 // ────────────────────────────────────────────────────────────────────────
 
-const EMPTY_VIDEO_FORM = { title: '', publisher: '', youtubeUrl: '', duration: '' }
+const EMPTY_VIDEO_FORM = {
+  title: '',
+  publisher: '',
+  youtubeUrl: '',
+  duration: '',
+  description: '',
+  status: 'Published',
+}
 
-function VideoForm({ initialValues, onCancel, onSubmit }) {
+function VideoForm({ initialValues, onCancel, onSubmit, submitting }) {
   const [form, setForm] = useState(initialValues ?? EMPTY_VIDEO_FORM)
 
   function updateField(field, value) {
@@ -300,14 +272,14 @@ function VideoForm({ initialValues, onCancel, onSubmit }) {
 
   function handleSubmit(e) {
     e.preventDefault()
-    if (!form.title.trim() || !form.publisher.trim() || !form.youtubeUrl.trim() || !form.duration.trim()) return
+    if (!form.title.trim() || !form.publisher.trim() || !form.duration.trim()) return
     onSubmit(form)
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="text-sm font-medium text-slate-700">Video title</label>
+        <label className="text-sm font-medium text-slate-700">Video title *</label>
         <input
           type="text"
           value={form.title}
@@ -319,7 +291,7 @@ function VideoForm({ initialValues, onCancel, onSubmit }) {
       </div>
 
       <div>
-        <label className="text-sm font-medium text-slate-700">Publisher</label>
+        <label className="text-sm font-medium text-slate-700">Publisher *</label>
         <input
           type="text"
           value={form.publisher}
@@ -331,7 +303,7 @@ function VideoForm({ initialValues, onCancel, onSubmit }) {
       </div>
 
       <div>
-        <label className="text-sm font-medium text-slate-700">YouTube URL</label>
+        <label className="text-sm font-medium text-slate-700">YouTube or Video URL *</label>
         <input
           type="text"
           value={form.youtubeUrl}
@@ -340,18 +312,42 @@ function VideoForm({ initialValues, onCancel, onSubmit }) {
           placeholder="https://www.youtube.com/watch?v=…"
           className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
         />
-        <p className="mt-1 text-[11px] text-slate-400">Paste the full link — the video ID is extracted automatically.</p>
+        <p className="mt-1 text-[11px] text-slate-400">Full YouTube URL or 11-character video ID</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-sm font-medium text-slate-700">Duration *</label>
+          <input
+            type="text"
+            value={form.duration}
+            onChange={(e) => updateField('duration', e.target.value)}
+            required
+            placeholder="e.g. 18 min"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium text-slate-700">Status</label>
+          <select
+            value={form.status}
+            onChange={(e) => updateField('status', e.target.value)}
+            className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+          >
+            <option value="Published">Published</option>
+            <option value="Draft">Draft</option>
+          </select>
+        </div>
       </div>
 
       <div>
-        <label className="text-sm font-medium text-slate-700">Duration</label>
-        <input
-          type="text"
-          value={form.duration}
-          onChange={(e) => updateField('duration', e.target.value)}
-          required
-          placeholder="e.g. 18 min"
-          className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+        <label className="text-sm font-medium text-slate-700">Short Description (Optional)</label>
+        <textarea
+          rows={2}
+          value={form.description}
+          onChange={(e) => updateField('description', e.target.value)}
+          placeholder="Brief description of video contents..."
+          className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
         />
       </div>
 
@@ -359,14 +355,17 @@ function VideoForm({ initialValues, onCancel, onSubmit }) {
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          disabled={submitting}
+          className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+          disabled={submitting}
+          className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
         >
+          {submitting && <Loader2 size={14} className="animate-spin" />}
           {initialValues ? 'Save changes' : 'Add video'}
         </button>
       </div>
@@ -374,37 +373,81 @@ function VideoForm({ initialValues, onCancel, onSubmit }) {
   )
 }
 
-function ManageVideosTab({ videos, onAdd, onUpdate, onDelete }) {
-  const [modalMode, setModalMode] = useState(null) // null | 'add' | { mode: 'edit', video }
+function ManageVideosTab() {
+  const [videos, setVideos] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [modalMode, setModalMode] = useState(null)
+  const [message, setMessage] = useState('')
 
-  function handleAddSubmit(form) {
-    onAdd({
-      id: `LM-${Date.now()}`,
-      title: form.title.trim(),
-      publisher: form.publisher.trim(),
-      youtubeId: extractYoutubeId(form.youtubeUrl),
-      duration: form.duration.trim(),
-      status: 'Published',
-    })
-    setModalMode(null)
+  useEffect(() => {
+    loadVideos()
+  }, [])
+
+  async function loadVideos() {
+    setLoading(true)
+    const data = await fetchVideos()
+    setVideos(data?.videos || [])
+    setLoading(false)
   }
 
-  function handleEditSubmit(form) {
-    onUpdate(modalMode.video.id, {
-      title: form.title.trim(),
-      publisher: form.publisher.trim(),
-      youtubeId: extractYoutubeId(form.youtubeUrl),
-      duration: form.duration.trim(),
-    })
-    setModalMode(null)
+  async function handleAddSubmit(form) {
+    setSubmitting(true)
+    try {
+      await createVideoApi(form)
+      setModalMode(null)
+      await loadVideos()
+      setMessage('Learning video added to MongoDB!')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      alert(err.message || 'Failed to add video')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleEditSubmit(form) {
+    setSubmitting(true)
+    try {
+      await updateVideoApi(modalMode.video._id, form)
+      setModalMode(null)
+      await loadVideos()
+      setMessage('Video updated in MongoDB!')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      alert(err.message || 'Failed to update video')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Delete this video from MongoDB?')) return
+    try {
+      await deleteVideoApi(id)
+      await loadVideos()
+      setMessage('Video removed from MongoDB.')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      alert(err.message || 'Failed to delete video')
+    }
   }
 
   return (
     <div className="space-y-6">
+      {message && (
+        <div className="flex items-center gap-2 rounded-xl bg-teal-50 border border-teal-200 px-4 py-3 text-sm text-teal-800">
+          <CheckCircle size={16} className="text-teal-600 shrink-0" />
+          {message}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-slate-900">Learning video catalog</h2>
-          <p className="mt-0.5 text-xs text-slate-500">{videos.length} videos · visible in the student Learning Center</p>
+          <h2 className="text-sm font-semibold text-slate-900">Learning Video Catalog</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {videos.length} videos stored in MongoDB · visible to students
+          </p>
         </div>
         <button
           type="button"
@@ -417,95 +460,126 @@ function ManageVideosTab({ videos, onAdd, onUpdate, onDelete }) {
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="max-h-[420px] overflow-y-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-5 py-3 font-medium">Video</th>
-                <th className="px-5 py-3 font-medium">Publisher</th>
-                <th className="px-5 py-3 font-medium">Duration</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {videos.map((video) => (
-                <tr key={video.id} className="odd:bg-white even:bg-slate-50/60 hover:bg-indigo-50/40">
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex h-10 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-900">
-                        <img
-                          src={`https://img.youtube.com/vi/${video.youtubeId}/default.jpg`}
-                          alt=""
-                          className="h-full w-full object-cover opacity-80"
-                        />
-                        <PlayCircle size={16} className="absolute text-white/90" />
-                      </div>
-                      <p className="font-medium text-slate-900">{video.title}</p>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-slate-600">{video.publisher}</td>
-                  <td className="px-5 py-3.5 text-slate-600">{video.duration}</td>
-                  <td className="px-5 py-3.5">
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(video.status)}`}>
-                      {video.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setModalMode({ mode: 'edit', video })}
-                        aria-label={`Edit ${video.title}`}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete(video.id)}
-                        aria-label={`Delete ${video.title}`}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {videos.length === 0 && (
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+          </div>
+        ) : (
+          <div className="max-h-[440px] overflow-y-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">
-                    No videos yet — add your first one to populate the Learning Center.
-                  </td>
+                  <th className="px-5 py-3 font-medium">Video</th>
+                  <th className="px-5 py-3 font-medium">Publisher</th>
+                  <th className="px-5 py-3 font-medium">Duration</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 text-right font-medium">Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {videos.map((video) => {
+                  const ytId = video.youtubeId || extractYoutubeId(video.videoUrl)
+                  const thumb = video.thumbnail || (ytId ? `https://img.youtube.com/vi/${ytId}/default.jpg` : '')
+
+                  return (
+                    <tr key={video._id} className="odd:bg-white even:bg-slate-50/60 hover:bg-indigo-50/40">
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="relative flex h-10 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-900">
+                            {thumb ? (
+                              <img
+                                src={thumb}
+                                alt=""
+                                className="h-full w-full object-cover opacity-80"
+                              />
+                            ) : (
+                              <Video size={16} className="text-white/60" />
+                            )}
+                            <PlayCircle size={16} className="absolute text-white/90" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-900">{video.title}</p>
+                            {video.description && (
+                              <p className="line-clamp-1 text-xs text-slate-400">{video.description}</p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-600">{video.publisher}</td>
+                      <td className="px-5 py-3.5 text-slate-600">{video.duration}</td>
+                      <td className="px-5 py-3.5">
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusBadgeClass(video.status)}`}>
+                          {video.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setModalMode({ mode: 'edit', video })}
+                            aria-label={`Edit ${video.title}`}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(video._id)}
+                            aria-label={`Delete ${video.title}`}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {videos.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-12 text-center text-sm text-slate-400">
+                      No learning videos available yet. Click &quot;Add new video&quot; to create one.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {modalMode === 'add' && (
         <Modal
-          title="Add new video"
-          description="This appears immediately in the student Learning Center."
+          title="Add New Learning Video"
+          description="Saves directly to MongoDB and publishes to student learning feeds."
           onClose={() => setModalMode(null)}
         >
-          <VideoForm onCancel={() => setModalMode(null)} onSubmit={handleAddSubmit} />
+          <VideoForm
+            onCancel={() => setModalMode(null)}
+            onSubmit={handleAddSubmit}
+            submitting={submitting}
+          />
         </Modal>
       )}
 
       {modalMode?.mode === 'edit' && (
-        <Modal title="Edit video" onClose={() => setModalMode(null)}>
+        <Modal
+          title="Edit Video"
+          description="Updates the existing MongoDB record."
+          onClose={() => setModalMode(null)}
+        >
           <VideoForm
             initialValues={{
               title: modalMode.video.title,
               publisher: modalMode.video.publisher,
-              youtubeUrl: modalMode.video.youtubeId,
+              youtubeUrl: modalMode.video.videoUrl || modalMode.video.youtubeId,
               duration: modalMode.video.duration,
+              description: modalMode.video.description || '',
+              status: modalMode.video.status || 'Published',
             }}
             onCancel={() => setModalMode(null)}
             onSubmit={handleEditSubmit}
+            submitting={submitting}
           />
         </Modal>
       )}
@@ -514,56 +588,84 @@ function ManageVideosTab({ videos, onAdd, onUpdate, onDelete }) {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Tab 3 — Manage Job Opportunities
+// Tab 3 — Manage Job Opportunities (External Job Links via /api/job-links)
 // ────────────────────────────────────────────────────────────────────────
 
-const EMPTY_JOB_FORM = { title: '', company: '', location: '', stipend: '', requiredSkillIds: [] }
+const EMPTY_JOB_FORM = {
+  title: '',
+  company: '',
+  location: 'Remote',
+  workMode: 'Remote',
+  jobType: 'Full-time',
+  jobUrl: '',
+  companyWebsite: '',
+  skills: [],
+  description: '',
+}
 
-function JobForm({ initialValues, onCancel, onSubmit }) {
+function JobForm({ initialValues, onCancel, onSubmit, submitting }) {
   const [form, setForm] = useState(initialValues ?? EMPTY_JOB_FORM)
+  const [skillInput, setSkillInput] = useState('')
 
   function updateField(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  function toggleSkill(skillId) {
+  function toggleSkill(skill) {
     setForm((prev) => ({
       ...prev,
-      requiredSkillIds: prev.requiredSkillIds.includes(skillId)
-        ? prev.requiredSkillIds.filter((id) => id !== skillId)
-        : [...prev.requiredSkillIds, skillId],
+      skills: prev.skills.includes(skill)
+        ? prev.skills.filter((s) => s !== skill)
+        : [...prev.skills, skill],
     }))
+  }
+
+  function addCustomSkill(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (skillInput.trim() && !form.skills.includes(skillInput.trim())) {
+        setForm((prev) => ({ ...prev, skills: [...prev.skills, skillInput.trim()] }))
+        setSkillInput('')
+      }
+    }
   }
 
   function handleSubmit(e) {
     e.preventDefault()
-    if (!form.title.trim() || !form.company.trim() || !form.location.trim() || !form.stipend.trim()) return
+    if (!form.title.trim() || !form.company.trim() || !form.jobUrl.trim()) {
+      alert('Job Title, Company, and Job URL are required.')
+      return
+    }
+    if (!/^https?:\/\/.+/i.test(form.jobUrl.trim())) {
+      alert('Job URL must be a valid link starting with http:// or https://')
+      return
+    }
     onSubmit(form)
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="text-sm font-medium text-slate-700">Job title</label>
+        <label className="text-sm font-medium text-slate-700">Job title *</label>
         <input
           type="text"
           value={form.title}
           onChange={(e) => updateField('title', e.target.value)}
           required
-          placeholder="e.g. Frontend Engineering Intern"
+          placeholder="e.g. Cloud Security Analyst"
           className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="text-sm font-medium text-slate-700">Company name</label>
+          <label className="text-sm font-medium text-slate-700">Company name *</label>
           <input
             type="text"
             value={form.company}
             onChange={(e) => updateField('company', e.target.value)}
             required
-            placeholder="e.g. Zenith Cloud Labs"
+            placeholder="e.g. Acme Corp"
             className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
           />
         </div>
@@ -573,102 +675,213 @@ function JobForm({ initialValues, onCancel, onSubmit }) {
             type="text"
             value={form.location}
             onChange={(e) => updateField('location', e.target.value)}
-            required
-            placeholder="e.g. Remote / Bengaluru"
+            placeholder="e.g. Bengaluru, KA / Remote"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-sm font-medium text-slate-700">Work mode</label>
+          <select
+            value={form.workMode}
+            onChange={(e) => updateField('workMode', e.target.value)}
+            className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+          >
+            <option value="Remote">Remote</option>
+            <option value="Hybrid">Hybrid</option>
+            <option value="On-site">On-site</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-sm font-medium text-slate-700">Job type</label>
+          <input
+            type="text"
+            value={form.jobType}
+            onChange={(e) => updateField('jobType', e.target.value)}
+            placeholder="e.g. Full-time / Internship"
             className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
           />
         </div>
       </div>
 
       <div>
-        <label className="text-sm font-medium text-slate-700">Stipend</label>
+        <label className="text-sm font-medium text-slate-700">External Job URL *</label>
         <input
-          type="text"
-          value={form.stipend}
-          onChange={(e) => updateField('stipend', e.target.value)}
+          type="url"
+          value={form.jobUrl}
+          onChange={(e) => updateField('jobUrl', e.target.value)}
           required
-          placeholder="e.g. ₹30,000/mo"
+          placeholder="https://company.com/careers/job-123"
           className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+        />
+        <p className="mt-1 text-[11px] text-slate-400">
+          Students will be redirected to this external portal via &quot;Visit Job &amp; Apply ↗&quot;
+        </p>
+      </div>
+
+      <div>
+        <label className="text-sm font-medium text-slate-700">Company Website (Optional)</label>
+        <input
+          type="url"
+          value={form.companyWebsite}
+          onChange={(e) => updateField('companyWebsite', e.target.value)}
+          placeholder="https://company.com"
+          className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
         />
       </div>
 
       <div>
         <label className="text-sm font-medium text-slate-700">Required skills</label>
-        <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 p-3.5 sm:grid-cols-3">
-          {skillCatalog.map((skill) => (
-            <label key={skill.id} className="flex items-center gap-2 text-xs text-slate-600">
-              <input
-                type="checkbox"
-                checked={form.requiredSkillIds.includes(skill.id)}
-                onChange={() => toggleSkill(skill.id)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/40"
-              />
-              {skill.name}
-            </label>
-          ))}
+        <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl border border-slate-200 p-3">
+          {POPULAR_SKILLS.map((skill) => {
+            const selected = form.skills.includes(skill)
+            return (
+              <button
+                type="button"
+                key={skill}
+                onClick={() => toggleSkill(skill)}
+                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+                  selected
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {skill}
+              </button>
+            )
+          })}
         </div>
+        <div className="mt-2 flex gap-2">
+          <input
+            type="text"
+            value={skillInput}
+            onChange={(e) => setSkillInput(e.target.value)}
+            onKeyDown={addCustomSkill}
+            placeholder="Type custom skill and press Enter"
+            className="w-full rounded-xl border border-slate-200 px-3 py-1.5 text-xs text-slate-900 outline-none focus:border-indigo-400"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-sm font-medium text-slate-700">Short Description (Optional)</label>
+        <textarea
+          rows={2}
+          value={form.description}
+          onChange={(e) => updateField('description', e.target.value)}
+          placeholder="Overview of the opportunity..."
+          className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20"
+        />
       </div>
 
       <div className="flex justify-end gap-2 pt-2">
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          disabled={submitting}
+          className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+          disabled={submitting}
+          className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
         >
-          {initialValues ? 'Save changes' : 'Post job'}
+          {submitting && <Loader2 size={14} className="animate-spin" />}
+          {initialValues ? 'Save changes' : 'Add Job Link'}
         </button>
       </div>
     </form>
   )
 }
 
-function ManageJobsTab({ jobs, onAdd, onUpdate, onDelete }) {
+function ManageJobsTab() {
+  const [jobs, setJobs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [modalMode, setModalMode] = useState(null)
-  const skillNameById = useMemo(
-    () => Object.fromEntries(skillCatalog.map((s) => [s.id, s.name])),
-    []
-  )
+  const [message, setMessage] = useState('')
 
-  function handleAddSubmit(form) {
-    onAdd({
-      id: `OPP-${Date.now()}`,
-      title: form.title.trim(),
-      company: form.company.trim(),
-      location: form.location.trim(),
-      stipend: form.stipend.trim(),
-      requiredSkillIds: form.requiredSkillIds,
-      status: 'Active',
-    })
-    setModalMode(null)
+  useEffect(() => {
+    loadJobs()
+  }, [])
+
+  async function loadJobs() {
+    setLoading(true)
+    const data = await fetchJobLinks()
+    setJobs(data?.jobLinks || [])
+    setLoading(false)
   }
 
-  function handleEditSubmit(form) {
-    onUpdate(modalMode.job.id, {
-      title: form.title.trim(),
-      company: form.company.trim(),
-      location: form.location.trim(),
-      stipend: form.stipend.trim(),
-      requiredSkillIds: form.requiredSkillIds,
-    })
-    setModalMode(null)
+  async function handleAddSubmit(form) {
+    setSubmitting(true)
+    try {
+      await createJobLinkApi(form)
+      setModalMode(null)
+      await loadJobs()
+      setMessage('Job link saved directly to MongoDB!')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      alert(err.message || 'Failed to add job link')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  function toggleStatus(job) {
-    onUpdate(job.id, { status: job.status === 'Active' ? 'Closed' : 'Active' })
+  async function handleEditSubmit(form) {
+    setSubmitting(true)
+    try {
+      await updateJobLinkApi(modalMode.job._id, form)
+      setModalMode(null)
+      await loadJobs()
+      setMessage('Job link updated in MongoDB!')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      alert(err.message || 'Failed to update job link')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Delete this job link from MongoDB?')) return
+    try {
+      await deleteJobLinkApi(id)
+      await loadJobs()
+      setMessage('Job link deleted from MongoDB.')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      alert(err.message || 'Failed to delete job link')
+    }
+  }
+
+  async function toggleStatus(job) {
+    try {
+      await updateJobLinkApi(job._id, { isActive: !job.isActive })
+      await loadJobs()
+    } catch (err) {
+      alert(err.message || 'Failed to update status')
+    }
   }
 
   return (
     <div className="space-y-6">
+      {message && (
+        <div className="flex items-center gap-2 rounded-xl bg-teal-50 border border-teal-200 px-4 py-3 text-sm text-teal-800">
+          <CheckCircle size={16} className="text-teal-600 shrink-0" />
+          {message}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-slate-900">Job & internship postings</h2>
-          <p className="mt-0.5 text-xs text-slate-500">{jobs.length} postings · visible in the student Opportunity Feed</p>
+          <h2 className="text-sm font-semibold text-slate-900">External Job Opportunities</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {jobs.length} external job postings in MongoDB · directs students to official job portals
+          </p>
         </div>
         <button
           type="button"
@@ -676,112 +889,151 @@ function ManageJobsTab({ jobs, onAdd, onUpdate, onDelete }) {
           className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
         >
           <Plus size={15} />
-          Post new job
+          Add Job Link
         </button>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card">
-        <div className="max-h-[420px] overflow-y-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-5 py-3 font-medium">Role</th>
-                <th className="px-5 py-3 font-medium">Location & stipend</th>
-                <th className="px-5 py-3 font-medium">Required skills</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {jobs.map((job) => (
-                <tr key={job.id} className="odd:bg-white even:bg-slate-50/60 hover:bg-indigo-50/40">
-                  <td className="px-5 py-3.5">
-                    <p className="font-medium text-slate-900">{job.title}</p>
-                    <p className="text-xs text-slate-500">{job.company}</p>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <p className="flex items-center gap-1 text-xs text-slate-600"><MapPin size={12} /> {job.location}</p>
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-600"><IndianRupee size={12} /> {job.stipend.replace('₹', '')}</p>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex flex-wrap gap-1">
-                      {job.requiredSkillIds.slice(0, 3).map((id) => (
-                        <span key={id} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
-                          {skillNameById[id] ?? id}
-                        </span>
-                      ))}
-                      {job.requiredSkillIds.length > 3 && (
-                        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
-                          +{job.requiredSkillIds.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <button
-                      type="button"
-                      onClick={() => toggleStatus(job)}
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition-opacity hover:opacity-80 ${statusBadgeClass(job.status)}`}
-                    >
-                      {job.status}
-                    </button>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setModalMode({ mode: 'edit', job })}
-                        aria-label={`Edit ${job.title}`}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete(job.id)}
-                        aria-label={`Delete ${job.title}`}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {jobs.length === 0 && (
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+          </div>
+        ) : (
+          <div className="max-h-[440px] overflow-y-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">
-                    No postings yet — post your first job to populate the Opportunity Feed.
-                  </td>
+                  <th className="px-5 py-3 font-medium">Role & Company</th>
+                  <th className="px-5 py-3 font-medium">Location & Mode</th>
+                  <th className="px-5 py-3 font-medium">External URL</th>
+                  <th className="px-5 py-3 font-medium">Required Skills</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 text-right font-medium">Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {jobs.map((job) => (
+                  <tr key={job._id} className="odd:bg-white even:bg-slate-50/60 hover:bg-indigo-50/40">
+                    <td className="px-5 py-3.5">
+                      <p className="font-medium text-slate-900">{job.title}</p>
+                      <p className="text-xs text-slate-500">{job.company}</p>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <p className="flex items-center gap-1 text-xs text-slate-600">
+                        <MapPin size={12} /> {job.location || 'Remote'}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {job.workMode || 'Remote'} · {job.jobType || 'Full-time'}
+                      </p>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {job.jobUrl ? (
+                        <a
+                          href={job.jobUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-100 transition-colors"
+                        >
+                          Visit Job
+                          <ExternalLink size={11} />
+                        </a>
+                      ) : (
+                        <span className="text-xs text-slate-400">Unavailable</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex flex-wrap gap-1">
+                        {(job.skills || []).slice(0, 3).map((skill, idx) => (
+                          <span key={idx} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">
+                            {skill}
+                          </span>
+                        ))}
+                        {(job.skills || []).length > 3 && (
+                          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
+                            +{(job.skills || []).length - 3}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleStatus(job)}
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition-opacity hover:opacity-80 ${statusBadgeClass(job.isActive !== false)}`}
+                      >
+                        {job.isActive !== false ? 'Active' : 'Inactive'}
+                      </button>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setModalMode({ mode: 'edit', job })}
+                          aria-label={`Edit ${job.title}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(job._id)}
+                          aria-label={`Delete ${job.title}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {jobs.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-400">
+                      No job opportunities available yet. Click &quot;Add Job Link&quot; to publish one.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {modalMode === 'add' && (
         <Modal
-          title="Post new job"
-          description="This appears immediately in the student Opportunity Feed."
+          title="Add Job Link"
+          description="Saves directly to MongoDB and publishes external opportunity for students."
           onClose={() => setModalMode(null)}
         >
-          <JobForm onCancel={() => setModalMode(null)} onSubmit={handleAddSubmit} />
+          <JobForm
+            onCancel={() => setModalMode(null)}
+            onSubmit={handleAddSubmit}
+            submitting={submitting}
+          />
         </Modal>
       )}
 
       {modalMode?.mode === 'edit' && (
-        <Modal title="Edit posting" onClose={() => setModalMode(null)}>
+        <Modal
+          title="Edit Job Link"
+          description="Updates the opportunity in MongoDB."
+          onClose={() => setModalMode(null)}
+        >
           <JobForm
             initialValues={{
               title: modalMode.job.title,
               company: modalMode.job.company,
-              location: modalMode.job.location,
-              stipend: modalMode.job.stipend,
-              requiredSkillIds: modalMode.job.requiredSkillIds,
+              location: modalMode.job.location || 'Remote',
+              workMode: modalMode.job.workMode || 'Remote',
+              jobType: modalMode.job.jobType || 'Full-time',
+              jobUrl: modalMode.job.jobUrl || '',
+              companyWebsite: modalMode.job.companyWebsite || '',
+              skills: modalMode.job.skills || [],
+              description: modalMode.job.description || '',
             }}
             onCancel={() => setModalMode(null)}
             onSubmit={handleEditSubmit}
+            submitting={submitting}
           />
         </Modal>
       )}
@@ -795,28 +1047,6 @@ function ManageJobsTab({ jobs, onAdd, onUpdate, onDelete }) {
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview')
-  const [videos, setVideos] = useState(INITIAL_VIDEOS)
-  const [jobs, setJobs] = useState(INITIAL_JOBS)
-
-  function addVideo(video) {
-    setVideos((prev) => [video, ...prev])
-  }
-  function updateVideo(id, changes) {
-    setVideos((prev) => prev.map((v) => (v.id === id ? { ...v, ...changes } : v)))
-  }
-  function deleteVideo(id) {
-    setVideos((prev) => prev.filter((v) => v.id !== id))
-  }
-
-  function addJob(job) {
-    setJobs((prev) => [job, ...prev])
-  }
-  function updateJob(id, changes) {
-    setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...changes } : j)))
-  }
-  function deleteJob(id) {
-    setJobs((prev) => prev.filter((j) => j.id !== id))
-  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -824,7 +1054,7 @@ export default function AdminDashboard() {
         <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Institution console</p>
         <h1 className="mt-1 text-xl font-semibold text-slate-900">Admin Dashboard</h1>
         <p className="mt-1.5 text-sm text-slate-500">
-          Monitor placement performance and manage the content students see across the platform.
+          Monitor placement performance and manage database-backed content seen across the platform.
         </p>
 
         <div className="mt-5 flex gap-1.5 overflow-x-auto rounded-xl bg-slate-100 p-1">
@@ -850,12 +1080,8 @@ export default function AdminDashboard() {
       </div>
 
       {activeTab === 'overview' && <OverviewTab />}
-      {activeTab === 'videos' && (
-        <ManageVideosTab videos={videos} onAdd={addVideo} onUpdate={updateVideo} onDelete={deleteVideo} />
-      )}
-      {activeTab === 'jobs' && (
-        <ManageJobsTab jobs={jobs} onAdd={addJob} onUpdate={updateJob} onDelete={deleteJob} />
-      )}
+      {activeTab === 'videos' && <ManageVideosTab />}
+      {activeTab === 'jobs' && <ManageJobsTab />}
       {activeTab === 'assessments' && <AdminAssessmentManager />}
     </div>
   )

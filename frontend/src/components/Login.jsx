@@ -194,7 +194,7 @@ export default function Login() {
               <GraduationCap size={20} className="text-teal-600" strokeWidth={2.25} />
             </div>
             <div className="leading-tight">
-              <p className="text-sm font-semibold text-slate-900">internsheu</p>
+              <p className="text-sm font-semibold text-slate-900">internsetu</p>
               <p className="text-[11px] text-slate-500">Academia × Industry Portal</p>
             </div>
           </div>
@@ -272,7 +272,7 @@ export default function Login() {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="user@internsheu.edu"
+                      placeholder="user@internsetu.edu"
                       className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
                     />
                   </div>

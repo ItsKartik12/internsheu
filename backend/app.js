@@ -8,6 +8,10 @@ import courseRoutes from './routes/courses.js'
 import internshipRoutes from './routes/internships.js'
 import jobRoutes from './routes/jobs.js'
 import assessmentRoutes from './routes/assessment.js'
+import profileRoutes from './routes/profile.js'
+import jobLinkRoutes from './routes/jobLinks.js'
+import videoRoutes from './routes/videos.js'
+import adminRoutes from './routes/admin.js'
 
 const app = express()
 
@@ -51,6 +55,10 @@ app.use('/api/courses', courseRoutes)
 app.use('/api/internships', internshipRoutes)
 app.use('/api/jobs', jobRoutes)
 app.use('/api/assessment', assessmentRoutes)
+app.use('/api/profile', profileRoutes)
+app.use('/api/job-links', jobLinkRoutes)
+app.use('/api/videos', videoRoutes)
+app.use('/api/admin', adminRoutes)
 
 // Fallback 404 for unmatched API routes
 app.use('/api', (req, res) => {

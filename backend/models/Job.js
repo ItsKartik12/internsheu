@@ -58,6 +58,19 @@ const jobSchema = new Schema(
       type: Number,
       default: 0,
     },
+    jobUrl: {
+      type: String,
+      trim: true,
+    },
+    companyWebsite: {
+      type: String,
+      trim: true,
+    },
+    workMode: {
+      type: String,
+      enum: ['Remote', 'Hybrid', 'On-site'],
+      default: 'Remote',
+    },
     isActive: {
       type: Boolean,
       default: true,
