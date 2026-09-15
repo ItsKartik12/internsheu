@@ -17,8 +17,23 @@ const curatedContentSchema = new Schema(
     },
     youtubeId: {
       type: String,
-      required: true,
       trim: true,
+      default: '',
+    },
+    videoUrl: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    thumbnail: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    description: {
+      type: String,
+      trim: true,
+      default: '',
     },
     duration: {
       type: String, // display string, e.g. "18 min" — kept simple for admin entry
@@ -38,7 +53,7 @@ const curatedContentSchema = new Schema(
     // Technology). This is the field the matching query filters on.
     fieldMarks: {
       type: [String],
-      required: true,
+      default: ['Computer Science'],
       enum: FIELD_MARKS,
       validate: {
         validator: (arr) => Array.isArray(arr) && arr.length > 0,

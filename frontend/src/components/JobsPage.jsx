@@ -20,19 +20,18 @@ const JOB_TYPES = ['All', 'Full-time', 'Part-time', 'Contract', 'Remote']
 
 export default function JobsPage() {
   const { user } = useAuth()
-  const isIndustryOrAdmin = user?.role === 'industry' || user?.role === 'admin'
+  const isAdmin = user?.role === 'admin'
 
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [selectedExp, setSelectedExp] = useState('All')
   const [selectedType, setSelectedType] = useState('All')
-  const [appliedIds, setAppliedIds] = useState(new Set())
   const [selectedJob, setSelectedJob] = useState(null)
   const [showPostModal, setShowPostModal] = useState(false)
   const [message, setMessage] = useState('')
 
-  // Post form state
+  // Post form state (Admin only)
   const [title, setTitle] = useState('')
   const [company, setCompany] = useState(user?.name || '')
   const [location, setLocation] = useState('Bengaluru')
@@ -41,7 +40,9 @@ export default function JobsPage() {
   const [salary, setSalary] = useState('₹8 - 12 LPA')
   const [skills, setSkills] = useState('')
   const [desc, setDesc] = useState('')
+  const [jobUrl, setJobUrl] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [appliedIds, setAppliedIds] = useState(new Set())
 
   useEffect(() => {
     loadJobs()
@@ -56,23 +57,6 @@ export default function JobsPage() {
     })
     setJobs(data?.jobs || [])
     setLoading(false)
-  }
-
-  async function handleApply(e, id) {
-    e.stopPropagation()
-    try {
-      await applyJobApi(id)
-      setAppliedIds((prev) => new Set([...prev, id]))
-      setJobs((prev) =>
-        prev.map((item) => (item._id === id ? { ...item, applicantsCount: (item.applicantsCount || 0) + 1 } : item))
-      )
-      setMessage('Job application submitted to hiring team!')
-      setTimeout(() => setMessage(''), 3500)
-    } catch {
-      setAppliedIds((prev) => new Set([...prev, id]))
-      setMessage('Application received (demo mode)!')
-      setTimeout(() => setMessage(''), 3500)
-    }
   }
 
   async function handleCreateJob(e) {
@@ -90,12 +74,14 @@ export default function JobsPage() {
         salary: salary.trim(),
         skills: skills.split(',').map((s) => s.trim()).filter(Boolean),
         description: desc.trim(),
+        jobUrl: jobUrl.trim() || undefined,
       }
       await createJobApi(payload)
       setShowPostModal(false)
       setTitle('')
       setSkills('')
       setDesc('')
+      setJobUrl('')
       loadJobs()
       setMessage('Job vacancy posted successfully!')
       setTimeout(() => setMessage(''), 3500)
@@ -123,7 +109,7 @@ export default function JobsPage() {
           </p>
         </div>
 
-        {isIndustryOrAdmin && (
+        {isAdmin && (
           <button
             type="button"
             onClick={() => setShowPostModal(true)}
@@ -247,22 +233,28 @@ export default function JobsPage() {
                   <div className="mt-3 flex items-center justify-between pt-1">
                     <div className="flex items-center gap-1 text-[11px] text-slate-400">
                       <Users size={12} />
-                      <span>{job.applicantsCount || 0} applied</span>
+                      <span>{job.openings || 1} opening{(job.openings || 1) > 1 ? 's' : ''}</span>
                     </div>
 
-                    <button
-                      type="button"
-                      disabled={isApplied}
-                      onClick={(e) => handleApply(e, job._id)}
-                      className={`flex items-center gap-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
-                        isApplied
-                          ? 'bg-teal-100 text-teal-800'
-                          : 'bg-purple-600 text-white hover:bg-purple-500 shadow-sm'
-                      }`}
-                    >
-                      {isApplied ? 'Applied ✓' : 'Apply Now'}
-                      {!isApplied && <Send size={12} />}
-                    </button>
+                    {job.jobUrl ? (
+                      <a
+                        href={job.jobUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-1 rounded-lg bg-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-purple-500"
+                      >
+                        Visit Job & Apply ↗
+                      </a>
+                    ) : (
+                      <span
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400 cursor-not-allowed"
+                        title="Application link unavailable"
+                      >
+                        Application link unavailable
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -328,18 +320,161 @@ export default function JobsPage() {
               >
                 Close
               </button>
+              {selectedJob.jobUrl ? (
+                <a
+                  href={selectedJob.jobUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 rounded-xl bg-purple-600 px-5 py-2 text-xs font-semibold text-white shadow hover:bg-purple-500"
+                >
+                  Visit Job & Apply ↗
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-xl bg-slate-100 px-5 py-2 text-xs font-semibold text-slate-400 cursor-not-allowed"
+                >
+                  Application link unavailable
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Post Modal */}
+      {isAdmin && showPostModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
+          onClick={() => setShowPostModal(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h2 className="text-base font-bold text-slate-900">Post Career Job (Admin)</h2>
               <button
                 type="button"
-                disabled={appliedIds.has(selectedJob._id)}
-                onClick={(e) => {
-                  handleApply(e, selectedJob._id)
-                  setSelectedJob(null)
-                }}
-                className="rounded-xl bg-purple-600 px-5 py-2 text-xs font-semibold text-white shadow hover:bg-purple-500 disabled:opacity-50"
+                onClick={() => setShowPostModal(false)}
+                className="text-slate-400 hover:text-slate-600"
               >
-                {appliedIds.has(selectedJob._id) ? 'Already Applied' : 'Submit Application'}
+                <X size={18} />
               </button>
             </div>
+
+            <form onSubmit={handleCreateJob} className="mt-4 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-700">Role Title *</label>
+                <input
+                  type="text"
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Associate Backend Engineer"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Company Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Location *</label>
+                  <input
+                    type="text"
+                    required
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Experience Level</label>
+                  <select
+                    value={experienceLevel}
+                    onChange={(e) => setExperienceLevel(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:border-purple-500"
+                  >
+                    <option value="Entry Level">Entry Level</option>
+                    <option value="Mid Level">Mid Level</option>
+                    <option value="Senior Level">Senior Level</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Salary Package</label>
+                  <input
+                    type="text"
+                    value={salary}
+                    onChange={(e) => setSalary(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-700">Job URL (optional)</label>
+                <input
+                  type="url"
+                  value={jobUrl}
+                  onChange={(e) => setJobUrl(e.target.value)}
+                  placeholder="https://company.com/careers/job"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-700">Required Skills</label>
+                <input
+                  type="text"
+                  value={skills}
+                  onChange={(e) => setSkills(e.target.value)}
+                  placeholder="Java, Spring Boot, AWS"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-700">Description *</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  placeholder="Detail job requirements..."
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPostModal(false)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="rounded-xl bg-purple-600 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-500 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Posting…' : 'Publish Job'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

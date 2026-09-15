@@ -15,7 +15,7 @@ router.use(authenticate)
 
 router.get('/', getJobs)
 router.get('/:id', getJobById)
-router.post('/', authorize('industry', 'admin'), createJob)
+router.post('/', authorize('admin'), createJob)
 router.put('/:id', authorize('industry', 'admin'), updateJob)
 router.delete('/:id', authorize('industry', 'admin'), deleteJob)
 router.post('/:id/apply', authorize('student'), applyJob)

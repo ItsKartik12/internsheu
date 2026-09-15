@@ -38,6 +38,11 @@ const internshipSchema = new Schema(
       enum: ['Full-time', 'Part-time', 'Remote', 'Hybrid', 'On-site'],
       default: 'Remote',
     },
+    workMode: {
+      type: String,
+      enum: ['Remote', 'Hybrid', 'On-site'],
+      default: 'Remote',
+    },
     stipend: {
       type: String,
       default: 'Competitive Stipend',
@@ -45,6 +50,31 @@ const internshipSchema = new Schema(
     duration: {
       type: String,
       default: '3 Months',
+    },
+    eligibility: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    responsibilities: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    qualifications: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    companyWebsite: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    contactEmail: {
+      type: String,
+      trim: true,
+      default: '',
     },
     deadline: {
       type: Date,
@@ -56,6 +86,17 @@ const internshipSchema = new Schema(
     applicantsCount: {
       type: Number,
       default: 0,
+    },
+    applicationUrl: {
+      type: String,
+      required: [true, 'Application URL is required'],
+      trim: true,
+      validate: {
+        validator: function (v) {
+          return /^https?:\/\/.+/i.test(v)
+        },
+        message: 'Please provide a valid application URL starting with http:// or https://',
+      },
     },
     isActive: {
       type: Boolean,

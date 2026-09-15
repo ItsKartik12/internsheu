@@ -1,4 +1,5 @@
 import Internship from '../models/Internship.js'
+import { isValidUrl } from '../utils/validateUrl.js'
 
 /**
  * GET /api/internships
@@ -64,10 +65,38 @@ export async function getInternshipById(req, res, next) {
  */
 export async function createInternship(req, res, next) {
   try {
-    const { title, company, description, skills, location, type, stipend, duration, deadline, openings } = req.body
+    const {
+      title,
+      company,
+      description,
+      skills,
+      location,
+      type,
+      stipend,
+      duration,
+      deadline,
+      openings,
+      applicationUrl,
+      workMode,
+      eligibility,
+      responsibilities,
+      qualifications,
+      companyWebsite,
+      contactEmail,
+    } = req.body
 
     if (!title || !description || !location) {
       return res.status(400).json({ error: 'Title, description, and location are required' })
+    }
+
+    if (!applicationUrl || typeof applicationUrl !== 'string' || !applicationUrl.trim()) {
+      return res.status(400).json({ error: 'Application URL is required' })
+    }
+
+    if (!isValidUrl(applicationUrl)) {
+      return res.status(400).json({
+        error: 'Invalid Application URL. Must be a valid web address starting with http:// or https://',
+      })
     }
 
     const internship = await Internship.create({
@@ -78,10 +107,17 @@ export async function createInternship(req, res, next) {
       skills: Array.isArray(skills) ? skills.map((s) => s.trim()) : [],
       location: location.trim(),
       type: type || 'Remote',
+      workMode: workMode || 'Remote',
       stipend: stipend || 'Competitive Stipend',
       duration: duration || '3 Months',
+      eligibility: eligibility ? eligibility.trim() : '',
+      responsibilities: responsibilities ? responsibilities.trim() : '',
+      qualifications: qualifications ? qualifications.trim() : '',
+      companyWebsite: companyWebsite ? companyWebsite.trim() : '',
+      contactEmail: contactEmail ? contactEmail.trim() : '',
       deadline: deadline ? new Date(deadline) : undefined,
       openings: openings || 1,
+      applicationUrl: applicationUrl.trim(),
     })
 
     res.status(201).json({ internship })
@@ -104,7 +140,34 @@ export async function updateInternship(req, res, next) {
       return res.status(403).json({ error: 'You do not have permission to edit this internship' })
     }
 
-    const updatableFields = ['title', 'company', 'description', 'skills', 'location', 'type', 'stipend', 'duration', 'deadline', 'openings', 'isActive']
+    if (req.body.applicationUrl !== undefined) {
+      if (!req.body.applicationUrl || !isValidUrl(req.body.applicationUrl)) {
+        return res.status(400).json({
+          error: 'Invalid Application URL. Must be a valid web address starting with http:// or https://',
+        })
+      }
+    }
+
+    const updatableFields = [
+      'title',
+      'company',
+      'description',
+      'skills',
+      'location',
+      'type',
+      'workMode',
+      'stipend',
+      'duration',
+      'eligibility',
+      'responsibilities',
+      'qualifications',
+      'companyWebsite',
+      'contactEmail',
+      'deadline',
+      'openings',
+      'applicationUrl',
+      'isActive',
+    ]
     for (const field of updatableFields) {
       if (req.body[field] !== undefined) {
         internship[field] = req.body[field]
