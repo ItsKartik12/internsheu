@@ -71,7 +71,8 @@ const jobLinkSchema = new Schema(
   { timestamps: true }
 )
 
-// Index for skill searches
+// Indexes for skill searches and active listing
 jobLinkSchema.index({ skills: 1 })
+jobLinkSchema.index({ isActive: 1, createdAt: -1 })
 
 export default mongoose.model('JobLink', jobLinkSchema, 'job_links')

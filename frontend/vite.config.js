@@ -5,6 +5,18 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    open: true
-  }
+    open: true,
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-helmet': ['react-helmet-async'],
+          'vendor-icons': ['lucide-react'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
+  },
 })

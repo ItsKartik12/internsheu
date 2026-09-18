@@ -115,6 +115,8 @@ function ModuleCard({ module, onOpen }) {
           <img
             src={thumbnail}
             alt={module.title ? `${module.title} preview thumbnail` : 'Learning module preview thumbnail'}
+            loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-60"
           />
         ) : (

@@ -1,35 +1,41 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, Outlet, useLocation, useOutletContext, NavLink } from 'react-router-dom'
 import { LogOut, ShieldCheck, BookOpen, Building2, Briefcase } from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import AiChatbot from './components/AiChatbot'
-import StudentDashboard from './components/StudentDashboard'
-import SkillGapAnalysis from './components/SkillGapAnalysis'
-import OpportunityFeed from './components/OpportunityFeed'
-import VideoInterview from './components/VideoInterview'
-import LearningModules from './components/LearningModules'
-import AdminDashboard from './components/AdminDashboard'
-import ComingSoon from './components/ComingSoon'
+import ErrorBoundary from './components/ErrorBoundary'
+import PageLoader from './components/PageLoader'
+
+// Eagerly loaded public and SEO critical components
 import Login from './components/Login'
 import CoursesPage from './components/CoursesPage'
 import InternshipsPage from './components/InternshipsPage'
 import JobsPage from './components/JobsPage'
-import EducatorDashboard from './components/EducatorDashboard'
-import IndustryDashboard from './components/IndustryDashboard'
-import AssessmentPage from './components/AssessmentPage'
-import SkillResultsPage from './components/SkillResultsPage'
-import StudentProfile from './components/StudentProfile'
-import IndustryTest from './components/IndustryTest'
-import IndustryAssessment from './components/IndustryAssessment'
-import IndustryMatrix from './components/IndustryMatrix'
-import StudentApplications from './components/StudentApplications'
-import { HelmetProvider } from 'react-helmet-async'
 import LandingPage from './components/LandingPage'
 import InternshipDetailPage from './components/InternshipDetailPage'
 import JobDetailPage from './components/JobDetailPage'
 import NotFound from './components/NotFound'
 import PublicLayout from './components/PublicLayout'
+import { HelmetProvider } from 'react-helmet-async'
+
+// Code-split / Lazy-loaded heavy private workspace components
+const StudentDashboard = lazy(() => import('./components/StudentDashboard'))
+const SkillGapAnalysis = lazy(() => import('./components/SkillGapAnalysis'))
+const OpportunityFeed = lazy(() => import('./components/OpportunityFeed'))
+const VideoInterview = lazy(() => import('./components/VideoInterview'))
+const LearningModules = lazy(() => import('./components/LearningModules'))
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'))
+const ComingSoon = lazy(() => import('./components/ComingSoon'))
+const EducatorDashboard = lazy(() => import('./components/EducatorDashboard'))
+const IndustryDashboard = lazy(() => import('./components/IndustryDashboard'))
+const AssessmentPage = lazy(() => import('./components/AssessmentPage'))
+const SkillResultsPage = lazy(() => import('./components/SkillResultsPage'))
+const StudentProfile = lazy(() => import('./components/StudentProfile'))
+const IndustryTest = lazy(() => import('./components/IndustryTest'))
+const IndustryAssessment = lazy(() => import('./components/IndustryAssessment'))
+const IndustryMatrix = lazy(() => import('./components/IndustryMatrix'))
+const StudentApplications = lazy(() => import('./components/StudentApplications'))
 
 import { AuthProvider, useAuth } from './context/AuthContext'
 
@@ -106,7 +112,9 @@ function StudentLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Header student={student} onLogout={logout} onMenuClick={() => setIsNavOpen(true)} />
         <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
-          <Outlet context={student} />
+          <Suspense fallback={<PageLoader message="Loading student workspace…" />}>
+            <Outlet context={student} />
+          </Suspense>
         </main>
       </div>
       <AiChatbot />
@@ -166,7 +174,9 @@ function EducatorLayout() {
         </button>
       </header>
       <main className="flex-1 overflow-y-auto px-6 py-8">
-        <Outlet />
+        <Suspense fallback={<PageLoader message="Loading educator dashboard…" />}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   )
@@ -234,7 +244,9 @@ function IndustryLayout() {
         </button>
       </header>
       <main className="flex-1 overflow-y-auto px-6 py-8">
-        <Outlet />
+        <Suspense fallback={<PageLoader message="Loading industry workspace…" />}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   )
@@ -265,7 +277,9 @@ function AdminLayout() {
         </button>
       </header>
       <main className="flex-1 overflow-y-auto px-6 py-8">
-        <Outlet />
+        <Suspense fallback={<PageLoader message="Loading administrator console…" />}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   )
@@ -385,7 +399,9 @@ export default function App() {
   return (
     <HelmetProvider>
       <AuthProvider>
-        <AppRoutes />
+        <ErrorBoundary>
+          <AppRoutes />
+        </ErrorBoundary>
       </AuthProvider>
     </HelmetProvider>
   )

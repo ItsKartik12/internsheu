@@ -497,6 +497,8 @@ function ManageVideosTab() {
                               <img
                                 src={thumb}
                                 alt={video.title ? `${video.title} thumbnail` : 'Video thumbnail'}
+                                loading="lazy"
+                                decoding="async"
                                 className="h-full w-full object-cover opacity-80"
                               />
                             ) : (

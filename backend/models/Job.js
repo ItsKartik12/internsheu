@@ -79,7 +79,8 @@ const jobSchema = new Schema(
   { timestamps: true }
 )
 
-// Index for search
+// Indexes for search and listing performance
 jobSchema.index({ skills: 1 })
+jobSchema.index({ isActive: 1, createdAt: -1 })
 
 export default mongoose.model('Job', jobSchema, 'jobs')

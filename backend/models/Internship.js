@@ -106,7 +106,8 @@ const internshipSchema = new Schema(
   { timestamps: true }
 )
 
-// Index for skill searches
+// Indexes for performance optimization
 internshipSchema.index({ skills: 1 })
+internshipSchema.index({ isActive: 1, createdAt: -1 })
 
 export default mongoose.model('Internship', internshipSchema, 'internships')
