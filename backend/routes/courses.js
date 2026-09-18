@@ -11,14 +11,14 @@ import { authenticate, authorize } from '../middleware/auth.js'
 
 const router = Router()
 
-// All routes require authentication
-router.use(authenticate)
-
+// Public browsing
 router.get('/', getCourses)
 router.get('/:id', getCourseById)
-router.post('/', authorize('educator', 'admin'), createCourse)
-router.put('/:id', authorize('educator', 'admin'), updateCourse)
-router.delete('/:id', authorize('educator', 'admin'), deleteCourse)
-router.post('/:id/enroll', authorize('student'), enrollCourse)
+
+// Protected actions
+router.post('/', authenticate, authorize('educator', 'admin'), createCourse)
+router.put('/:id', authenticate, authorize('educator', 'admin'), updateCourse)
+router.delete('/:id', authenticate, authorize('educator', 'admin'), deleteCourse)
+router.post('/:id/enroll', authenticate, authorize('student'), enrollCourse)
 
 export default router

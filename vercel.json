@@ -1,7 +1,38 @@
 {
+  "version": 2,
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/internships/:id",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "(?i).*(bot|crawl|spider|facebookexternalhit|whatsapp|slack|twitter|linkedin|embedly|quora|outbrain|pinterest|vkShare|w3c_validator).*"
+        }
+      ],
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/jobs/:id",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "(?i).*(bot|crawl|spider|facebookexternalhit|whatsapp|slack|twitter|linkedin|embedly|quora|outbrain|pinterest|vkShare|w3c_validator).*"
+        }
+      ],
+      "destination": "/api/index.js"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"

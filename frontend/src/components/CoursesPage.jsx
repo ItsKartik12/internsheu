@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   BookOpen,
   Search,
@@ -18,6 +19,7 @@ const CATEGORIES = ['All', 'Web Development', 'AI & Data Science', 'Cloud & DevO
 const LEVELS = ['All', 'Beginner', 'Intermediate', 'Advanced']
 
 export default function CoursesPage() {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const isEducatorOrAdmin = user?.role === 'educator' || user?.role === 'admin'
 
@@ -57,6 +59,10 @@ export default function CoursesPage() {
 
   async function handleEnroll(e, courseId) {
     e.stopPropagation()
+    if (!user) {
+      navigate('/login', { state: { from: '/courses' } })
+      return
+    }
     try {
       await enrollCourseApi(courseId)
       setEnrolledCourseIds((prev) => new Set([...prev, courseId]))
@@ -216,9 +222,9 @@ export default function CoursesPage() {
                     </span>
                   </div>
 
-                  <h3 className="mt-3 text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-2">
+                  <h2 className="mt-3 text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-2">
                     {course.title}
-                  </h3>
+                  </h2>
 
                   <p className="mt-2 text-xs leading-relaxed text-slate-500 line-clamp-3">
                     {course.description}
@@ -277,6 +283,9 @@ export default function CoursesPage() {
       {/* Course Detail / Curriculum Modal */}
       {selectedCourse && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Course details"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
           onClick={() => setSelectedCourse(null)}
         >
@@ -354,6 +363,9 @@ export default function CoursesPage() {
       {/* Create Course Modal */}
       {showCreateModal && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Publish new course"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
           onClick={() => setShowCreateModal(false)}
         >

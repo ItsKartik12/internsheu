@@ -3,6 +3,12 @@ import Internship from '../models/Internship.js'
 import JobLink from '../models/JobLink.js'
 import AssessmentAttempt from '../models/AssessmentAttempt.js'
 import SkillResult from '../models/SkillResult.js'
+import Contest from '../models/Contest.js'
+import ContestResult from '../models/ContestResult.js'
+import IndustryAssessment from '../models/IndustryAssessment.js'
+import IndustryAssessmentAttempt from '../models/IndustryAssessmentAttempt.js'
+import Problem from '../models/Problem.js'
+import TalentPipeline from '../models/TalentPipeline.js'
 
 /**
  * GET /api/admin/stats
@@ -63,6 +69,50 @@ export async function getAdminStats(req, res, next) {
       placementRate: null, // Real placement data not tracked yet
       departmentBreakdown,
       recentActivity,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/admin/industry-overview
+ * Admin oversight into Industry Contests, Industry Assessments, Problems, and Screening
+ */
+export async function getAdminIndustryOverview(req, res, next) {
+  try {
+    const [
+      totalContests,
+      totalIndustryAssessments,
+      totalProblems,
+      totalShortlisted,
+      contests,
+      assessments,
+    ] = await Promise.all([
+      Contest.countDocuments(),
+      IndustryAssessment.countDocuments(),
+      Problem.countDocuments(),
+      TalentPipeline.countDocuments(),
+      Contest.find()
+        .populate('industryId', 'name email')
+        .populate('problems', 'title difficulty')
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean(),
+      IndustryAssessment.find()
+        .populate('industryId', 'name email')
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean(),
+    ])
+
+    res.json({
+      totalContests,
+      totalIndustryAssessments,
+      totalProblems,
+      totalShortlisted,
+      contests,
+      assessments,
     })
   } catch (err) {
     next(err)

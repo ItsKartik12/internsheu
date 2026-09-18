@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   Briefcase,
   Search,
@@ -12,13 +13,20 @@ import {
   Users,
   Award,
 } from 'lucide-react'
-import { fetchJobs, applyJobApi, createJobApi } from '../services/api'
+import {
+  fetchJobs,
+  applyJobApi,
+  createJobApi,
+  trackVisitJobUrlApi,
+  fetchMyJobApplications,
+} from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
 const EXP_LEVELS = ['All', 'Entry Level', 'Mid Level', 'Senior Level']
 const JOB_TYPES = ['All', 'Full-time', 'Part-time', 'Contract', 'Remote']
 
 export default function JobsPage() {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -47,6 +55,41 @@ export default function JobsPage() {
   useEffect(() => {
     loadJobs()
   }, [search, selectedExp, selectedType])
+
+  useEffect(() => {
+    if (user?.role === 'student') {
+      fetchMyJobApplications()
+        .then((res) => {
+          const ids = new Set((res?.applications || []).map((a) => a.jobId))
+          setAppliedIds(ids)
+        })
+        .catch(() => {})
+    }
+  }, [user])
+
+  async function handleVisitAndApplyJob(job, e) {
+    if (e) e.stopPropagation()
+    if (!job?.jobUrl) return
+
+    if (!user) {
+      navigate('/login', { state: { from: '/jobs' } })
+      return
+    }
+
+    if (user?.role === 'student') {
+      try {
+        await applyJobApi(job._id)
+        await trackVisitJobUrlApi(job._id)
+        setAppliedIds((prev) => new Set([...prev, job._id]))
+        setMessage('Application recorded in InternSetu. Opening company application portal…')
+        setTimeout(() => setMessage(''), 4000)
+      } catch (err) {
+        console.warn('Job application tracking notice:', err.message)
+      }
+    }
+
+    window.open(job.jobUrl, '_blank', 'noopener,noreferrer')
+  }
 
   async function loadJobs() {
     setLoading(true)
@@ -202,9 +245,15 @@ export default function JobsPage() {
                     </span>
                   </div>
 
-                  <h3 className="mt-2.5 text-base font-bold text-slate-900 group-hover:text-purple-600 transition-colors">
-                    {job.title}
-                  </h3>
+                  <h2 className="mt-2.5 text-base font-bold text-slate-900 group-hover:text-purple-600 transition-colors">
+                    <Link
+                      to={`/jobs/${job._id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="hover:underline focus:outline-none"
+                    >
+                      {job.title}
+                    </Link>
+                  </h2>
 
                   <p className="mt-2 text-xs leading-relaxed text-slate-500 line-clamp-3">
                     {job.description}
@@ -237,15 +286,17 @@ export default function JobsPage() {
                     </div>
 
                     {job.jobUrl ? (
-                      <a
-                        href={job.jobUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 rounded-lg bg-purple-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-purple-500"
+                      <button
+                        type="button"
+                        onClick={(e) => handleVisitAndApplyJob(job, e)}
+                        className={`flex items-center gap-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold shadow-sm transition ${
+                          isApplied
+                            ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                            : 'bg-purple-600 text-white hover:bg-purple-500'
+                        }`}
                       >
-                        Visit Job & Apply ↗
-                      </a>
+                        {isApplied ? 'Visited & Applied ↗' : 'Visit Job & Apply ↗'}
+                      </button>
                     ) : (
                       <span
                         onClick={(e) => e.stopPropagation()}
@@ -266,6 +317,9 @@ export default function JobsPage() {
       {/* Detail Modal */}
       {selectedJob && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Job details"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
           onClick={() => setSelectedJob(null)}
         >
@@ -313,6 +367,12 @@ export default function JobsPage() {
             </div>
 
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+              <Link
+                to={`/jobs/${selectedJob._id}`}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Full Page ↗
+              </Link>
               <button
                 type="button"
                 onClick={() => setSelectedJob(null)}
@@ -321,14 +381,17 @@ export default function JobsPage() {
                 Close
               </button>
               {selectedJob.jobUrl ? (
-                <a
-                  href={selectedJob.jobUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 rounded-xl bg-purple-600 px-5 py-2 text-xs font-semibold text-white shadow hover:bg-purple-500"
+                <button
+                  type="button"
+                  onClick={(e) => handleVisitAndApplyJob(selectedJob, e)}
+                  className={`flex items-center gap-1 rounded-xl px-5 py-2 text-xs font-semibold shadow transition ${
+                    appliedIds.has(selectedJob._id)
+                      ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                      : 'bg-purple-600 text-white hover:bg-purple-500'
+                  }`}
                 >
-                  Visit Job & Apply ↗
-                </a>
+                  {appliedIds.has(selectedJob._id) ? 'Visited & Applied ↗' : 'Visit Job & Apply ↗'}
+                </button>
               ) : (
                 <button
                   type="button"
@@ -346,6 +409,9 @@ export default function JobsPage() {
       {/* Admin Post Modal */}
       {isAdmin && showPostModal && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Post career job"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
           onClick={() => setShowPostModal(false)}
         >

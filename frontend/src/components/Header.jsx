@@ -3,12 +3,16 @@ import { Bell, ChevronRight, LogOut, Menu } from 'lucide-react'
 
 const routeMeta = {
   '/': { section: 'Overview', page: 'Dashboard' },
+  '/dashboard': { section: 'Overview', page: 'Dashboard' },
   '/profile': { section: 'Profile', page: 'Student Profile' },
   '/courses': { section: 'Academics', page: 'Verified Courses' },
   '/internships': { section: 'Opportunities', page: 'Internships' },
   '/jobs': { section: 'Opportunities', page: 'Career Jobs' },
   '/assessment': { section: 'Assessments', page: 'Skill Assessments' },
   '/assessment/results': { section: 'Assessments', page: 'Skill Matrix' },
+  '/industry-test': { section: 'Industry Screening', page: 'Industry Test (DSA)' },
+  '/industry-assessment': { section: 'Industry Screening', page: 'Industry Assessment' },
+  '/industry-matrix': { section: 'Industry Screening', page: 'Industry Matrix' },
   '/interview': { section: 'Growth', page: 'AI Mock Interview' },
   '/learning': { section: 'Growth', page: 'Learning Center' },
   '/applications': { section: 'Tracking', page: 'Applications' },

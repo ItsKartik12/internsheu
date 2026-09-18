@@ -13,6 +13,8 @@ import {
 
 const DEFAULT_API_BASE_URL = import.meta.env.DEV
   ? 'http://localhost:5000'
+  : typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')
+  ? ''
   : 'https://internsheu.onrender.com'
 
 const API_BASE_URL =
@@ -275,6 +277,17 @@ export async function fetchInternships(params = {}) {
   return { internships: list }
 }
 
+export async function fetchInternshipById(id) {
+  try {
+    const res = await request(`/api/internships/${id}`)
+    return res?.internship || null
+  } catch (err) {
+    if (err.status === 404) return null
+    const localItems = getLocalItems('internships')
+    return localItems.find((i) => i._id === id) || null
+  }
+}
+
 export async function createInternshipApi(internshipData) {
   try {
     const res = await request('/api/internships', {
@@ -375,6 +388,17 @@ export async function fetchJobs(params = {}) {
   }
 
   return { jobs: list }
+}
+
+export async function fetchJobById(id) {
+  try {
+    const res = await request(`/api/jobs/${id}`)
+    return res?.job || null
+  } catch (err) {
+    if (err.status === 404) return null
+    const localItems = getLocalItems('jobs')
+    return localItems.find((j) => j._id === id) || null
+  }
 }
 
 export async function createJobApi(jobData) {
@@ -675,6 +699,291 @@ export async function fetchAdminStats() {
     placementRate: null,
     departmentBreakdown: [],
     recentActivity: [],
+  })
+}
+
+export async function fetchAdminIndustryOverview() {
+  return safeRequest('/api/admin/industry-overview', {}, {
+    totalContests: 0,
+    totalIndustryAssessments: 0,
+    totalProblems: 0,
+    totalShortlisted: 0,
+    contests: [],
+    assessments: [],
+  })
+}
+
+// ── Problem Library APIs ──
+export async function fetchProblems(params = {}) {
+  const query = new URLSearchParams()
+  if (params.topic) query.set('topic', params.topic)
+  if (params.difficulty) query.set('difficulty', params.difficulty)
+  if (params.search) query.set('search', params.search)
+  if (params.status) query.set('status', params.status)
+  if (params.language) query.set('language', params.language)
+  const qs = query.toString() ? `?${query.toString()}` : ''
+
+  return safeRequest(`/api/problems${qs}`, {}, { problems: [] })
+}
+
+export async function fetchProblemById(id) {
+  return request(`/api/problems/${id}`)
+}
+
+export async function createProblemApi(problemData) {
+  return request('/api/problems', {
+    method: 'POST',
+    body: JSON.stringify(problemData),
+  })
+}
+
+export async function updateProblemApi(id, problemData) {
+  return request(`/api/problems/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(problemData),
+  })
+}
+
+export async function deleteProblemApi(id) {
+  return request(`/api/problems/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function validateProblemMappingApi(externalProblemId) {
+  return request('/api/problems/validate-mapping', {
+    method: 'POST',
+    body: JSON.stringify({ externalProblemId }),
+  })
+}
+
+// ── Industry DSA Contests APIs ──
+export async function fetchIndustryContests() {
+  return safeRequest('/api/industry/contests', {}, { contests: [] })
+}
+
+export async function fetchContestById(id) {
+  return request(`/api/industry/contests/${id}`)
+}
+
+export async function createContestApi(contestData) {
+  return request('/api/industry/contests', {
+    method: 'POST',
+    body: JSON.stringify(contestData),
+  })
+}
+
+export async function updateContestApi(id, contestData) {
+  return request(`/api/industry/contests/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(contestData),
+  })
+}
+
+export async function publishContestApi(id) {
+  return request(`/api/industry/contests/${id}/publish`, {
+    method: 'POST',
+  })
+}
+
+export async function deleteContestApi(id) {
+  return request(`/api/industry/contests/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function fetchContestStandings(id) {
+  return safeRequest(`/api/industry/contests/${id}/standings`, {}, { standings: [] })
+}
+
+export async function syncContestResultsApi(id) {
+  return request(`/api/industry/contests/${id}/sync-results`, {
+    method: 'POST',
+  })
+}
+
+// ── Student Industry Tests (DSA Contests) APIs ──
+export async function fetchStudentIndustryTests() {
+  return safeRequest('/api/student/industry-tests', {}, { contests: [] })
+}
+
+export async function fetchLiveContestShortcut() {
+  return safeRequest('/api/student/industry-tests/live-shortcut', {}, { liveContest: null })
+}
+
+export async function fetchStudentContestDetails(id) {
+  return request(`/api/student/industry-tests/${id}`)
+}
+
+export async function submitContestSolutionApi(id, payload) {
+  return request(`/api/student/industry-tests/${id}/submit`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+
+// ── Industry Assessments (MCQ / Screening) APIs ──
+export async function fetchIndustryAssessments() {
+  return safeRequest('/api/industry/assessments', {}, { assessments: [] })
+}
+
+export async function fetchIndustryAssessmentById(id) {
+  return request(`/api/industry/assessments/${id}`)
+}
+
+export async function createIndustryAssessmentApi(data) {
+  return request('/api/industry/assessments', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function updateIndustryAssessmentApi(id, data) {
+  return request(`/api/industry/assessments/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export async function deleteIndustryAssessmentApi(id) {
+  return request(`/api/industry/assessments/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function fetchAssessmentResultsApi(id) {
+  return safeRequest(`/api/industry/assessments/${id}/results`, {}, { attempts: [], questionStats: [] })
+}
+
+// ── Student Industry Assessments APIs ──
+export async function fetchStudentIndustryAssessments() {
+  return safeRequest('/api/student/industry-assessments', {}, { assessments: [] })
+}
+
+export async function startStudentAssessmentApi(id) {
+  return request(`/api/student/industry-assessments/${id}/start`, {
+    method: 'POST',
+  })
+}
+
+export async function submitStudentAssessmentApi(id, payload) {
+  return request(`/api/student/industry-assessments/${id}/submit`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+// ── Industry Candidate Matrix & Discovery APIs ──
+export async function fetchCandidateMatrix(params = {}) {
+  const query = new URLSearchParams()
+  if (params.sort) query.set('sort', params.sort)
+  if (params.order) query.set('order', params.order)
+  if (params.search) query.set('search', params.search)
+  if (params.role) query.set('role', params.role)
+  if (params.minScore) query.set('minScore', params.minScore)
+  const qs = query.toString() ? `?${query.toString()}` : ''
+
+  return safeRequest(`/api/industry/candidates${qs}`, {}, { candidates: [], totalCount: 0 })
+}
+
+export async function fetchCandidateProfile(studentId) {
+  const id = typeof studentId === 'object' && studentId !== null ? (studentId._id || studentId.studentId?._id || studentId.studentId) : studentId
+  return request(`/api/industry/candidates/${id}`)
+}
+
+export async function updateCandidatePipelineApi(payload) {
+  const studentId = typeof payload.studentId === 'object' && payload.studentId !== null
+    ? (payload.studentId._id || payload.studentId.studentId?._id || payload.studentId.studentId)
+    : payload.studentId
+  return request('/api/industry/candidates/pipeline', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, studentId }),
+  })
+}
+
+export async function fetchIndustryRequirements() {
+  return safeRequest('/api/industry/candidates/requirements', {}, { requirements: [] })
+}
+
+export async function createIndustryRequirementApi(payload) {
+  return request('/api/industry/candidates/requirements', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+// ── Student Industry Matrix API ──
+export async function fetchStudentIndustryMatrix() {
+  return safeRequest('/api/student/industry-matrix', {}, {
+    industryMatrix: {
+      hasEvidence: false,
+      assessment: { score: 0, totalAttempts: 0, passedCount: 0, recentAttempts: [] },
+      dsa: { score: 0, problemsSolved: 0, bestRank: 0, contestsParticipated: 0, contests: [] },
+      aiInterview: { score: 80, status: 'Not Attempted' },
+      overallIndustryScore: null,
+      isConfigured: false,
+    },
+  })
+}
+
+// ── Internship Application Tracking APIs ──
+export async function applyInternsetuApi(internshipId, payload) {
+  return request(`/api/internships/${internshipId}/apply-internsetu`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function trackVisitCompanyUrlApi(internshipId) {
+  return request(`/api/internships/${internshipId}/track-visit`, {
+    method: 'POST',
+  })
+}
+
+export async function fetchInternshipApplications(internshipId) {
+  return safeRequest(`/api/internships/${internshipId}/applications`, {}, { applications: [], total: 0 })
+}
+
+export async function fetchMyApplications() {
+  return safeRequest('/api/internships/my-applications', {}, { applications: [] })
+}
+
+export async function trackVisitJobUrlApi(jobId) {
+  return safeRequest(
+    `/api/jobs/${jobId}/track-visit`,
+    { method: 'POST' },
+    { message: 'Visit tracked', status: 'VISITED_COMPANY_APPLICATION' }
+  )
+}
+
+export async function fetchMyJobApplications() {
+  return safeRequest('/api/jobs/my-applications', {}, { applications: [] })
+}
+
+// ── Industry Candidate Contact Unlock & Pipeline APIs ──
+export async function unlockCandidateContactApi(payload) {
+  return request('/api/industry/pipeline/unlock-contact', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function fetchTalentPipelineApi(params = {}) {
+  const query = new URLSearchParams()
+  if (params.stage) query.set('stage', params.stage)
+  const qs = query.toString() ? `?${query.toString()}` : ''
+  return safeRequest(`/api/industry/candidates/pipeline${qs}`, {}, { candidates: [] })
+}
+
+export async function fetchShortlistedCandidatesApi() {
+  return safeRequest('/api/industry/candidates/pipeline?stage=Shortlisted', {}, { candidates: [] })
+}
+
+export async function bulkUnlockShortlistedApi(payload = {}) {
+  return request('/api/industry/pipeline/bulk-unlock', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   })
 }
 

@@ -1,0 +1,43 @@
+# InternSetu Robots Configuration
+# https://www.robotstxt.org/robotstxt.html
+
+User-agent: *
+Allow: /
+Allow: /internships
+Allow: /internships/*
+Allow: /jobs
+Allow: /jobs/*
+Allow: /courses
+Allow: /login
+Allow: /favicon.svg
+Allow: /site.webmanifest
+
+# Disallow private dashboards, candidate records, and authenticated workflows
+Disallow: /admin
+Disallow: /admin/*
+Disallow: /industry
+Disallow: /industry/*
+Disallow: /educator
+Disallow: /educator/*
+Disallow: /dashboard
+Disallow: /dashboard/*
+Disallow: /profile
+Disallow: /profile/*
+Disallow: /assessment
+Disallow: /assessment/*
+Disallow: /industry-test
+Disallow: /industry-test/*
+Disallow: /industry-assessment
+Disallow: /industry-assessment/*
+Disallow: /industry-matrix
+Disallow: /industry-matrix/*
+Disallow: /skill-gap
+Disallow: /opportunities
+Disallow: /interview
+Disallow: /learning
+Disallow: /applications
+Disallow: /applications/*
+Disallow: /api/
+
+# Sitemap location
+Sitemap: https://internsetu.vercel.app/sitemap.xml

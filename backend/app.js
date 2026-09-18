@@ -12,6 +12,15 @@ import profileRoutes from './routes/profile.js'
 import jobLinkRoutes from './routes/jobLinks.js'
 import videoRoutes from './routes/videos.js'
 import adminRoutes from './routes/admin.js'
+import problemRoutes from './routes/problems.js'
+import industryContestRoutes from './routes/industryContests.js'
+import industryAssessmentRoutes from './routes/industryAssessments.js'
+import industryCandidateRoutes from './routes/industryCandidates.js'
+import studentIndustryTestRoutes from './routes/studentIndustryTests.js'
+import studentIndustryAssessmentRoutes from './routes/studentIndustryAssessments.js'
+import studentIndustryMatrixRoutes from './routes/studentIndustryMatrix.js'
+import sitemapRoutes from './routes/sitemap.js'
+import seoCrawlerRoutes from './routes/seoCrawler.js'
 
 const app = express()
 
@@ -42,7 +51,7 @@ app.use(async (req, res, next) => {
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    service: 'internsheu-api',
+    service: 'internsetu-api',
     environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString(),
   })
@@ -59,6 +68,29 @@ app.use('/api/profile', profileRoutes)
 app.use('/api/job-links', jobLinkRoutes)
 app.use('/api/videos', videoRoutes)
 app.use('/api/admin', adminRoutes)
+
+// New Industry & Problem Library Routes
+app.use('/api/problems', problemRoutes)
+app.use('/api/industry/contests', industryContestRoutes)
+app.use('/api/industry/assessments', industryAssessmentRoutes)
+app.use('/api/industry/candidates', industryCandidateRoutes)
+// Direct alias for /api/industry/pipeline (e.g. POST /api/industry/pipeline/unlock-contact)
+app.use('/api/industry/pipeline', (req, res, next) => {
+  req.url = '/pipeline' + req.url
+  industryCandidateRoutes(req, res, next)
+})
+
+// New Student Industry Screening Routes
+app.use('/api/student/industry-tests', studentIndustryTestRoutes)
+app.use('/api/student/industry-assessments', studentIndustryAssessmentRoutes)
+app.use('/api/student/industry-matrix', studentIndustryMatrixRoutes)
+
+// Public Dynamic Sitemap Route
+app.use('/sitemap.xml', sitemapRoutes)
+app.use('/api/sitemap.xml', sitemapRoutes)
+
+// Public SEO Detail Pre-rendering for Crawlers & Social Bots
+app.use(seoCrawlerRoutes)
 
 // Fallback 404 for unmatched API routes
 app.use('/api', (req, res) => {

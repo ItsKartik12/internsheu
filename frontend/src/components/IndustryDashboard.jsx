@@ -13,6 +13,16 @@ import {
   Link2,
   Calendar,
   AlertCircle,
+  Code2,
+  ClipboardCheck,
+  Users,
+  Trophy,
+  BarChart3,
+  Eye,
+  FileCheck,
+  Loader2,
+  ChevronDown,
+  Star,
 } from 'lucide-react'
 import {
   fetchInternships,
@@ -23,8 +33,25 @@ import {
   createJobLinkApi,
   updateJobLinkApi,
   deleteJobLinkApi,
+  fetchIndustryContests,
+  createContestApi,
+  deleteContestApi,
+  publishContestApi,
+  fetchContestStandings,
+  fetchIndustryAssessments,
+  createIndustryAssessmentApi,
+  deleteIndustryAssessmentApi,
+  fetchAssessmentResultsApi,
+  fetchCandidateMatrix,
+  fetchCandidateProfile,
+  updateCandidatePipelineApi,
+  fetchInternshipApplications,
+  fetchProblems,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import CandidateProfileModal from './CandidateProfileModal'
+import CandidateMatrixTab from './industry/CandidateMatrixTab'
+import ShortlistedCandidatesTab from './industry/ShortlistedCandidatesTab'
 
 function isValidUrl(url) {
   if (!url || typeof url !== 'string') return false
@@ -38,9 +65,11 @@ function isValidUrl(url) {
   }
 }
 
+const PIPELINE_STAGES = ['Matched', 'Shortlisted', 'Contacted', 'Interviewed', 'Selected']
+
 export default function IndustryDashboard() {
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState('internships') // 'internships' | 'job_links'
+  const [activeTab, setActiveTab] = useState('internships')
   const [internships, setInternships] = useState([])
   const [jobLinks, setJobLinks] = useState([])
   const [loading, setLoading] = useState(true)
@@ -52,6 +81,40 @@ export default function IndustryDashboard() {
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Industry Contests state
+  const [contests, setContests] = useState([])
+  const [contestsLoading, setContestsLoading] = useState(false)
+  const [showContestModal, setShowContestModal] = useState(false)
+  const [contestForm, setContestForm] = useState({ title: '', description: '', role: '', durationMinutes: 120, startDate: '', endDate: '', allowedLanguages: 'C++,Java,Python,JavaScript', maxParticipants: 200 })
+  const [contestSubmitting, setContestSubmitting] = useState(false)
+  const [contestError, setContestError] = useState('')
+  const [viewStandings, setViewStandings] = useState(null)
+  const [standings, setStandings] = useState([])
+  const [availableProblems, setAvailableProblems] = useState([])
+  const [selectedProblems, setSelectedProblems] = useState([])
+
+  // Industry Assessments state
+  const [assessments, setAssessments] = useState([])
+  const [assessmentsLoading, setAssessmentsLoading] = useState(false)
+  const [showAssessmentModal, setShowAssessmentModal] = useState(false)
+  const [assessmentForm, setAssessmentForm] = useState({ title: '', description: '', role: '', durationMinutes: 60, startDate: '', endDate: '', maxAttempts: 1, passingScore: 60 })
+  const [assessmentQuestions, setAssessmentQuestions] = useState([])
+  const [assessmentSubmitting, setAssessmentSubmitting] = useState(false)
+  const [assessmentError, setAssessmentError] = useState('')
+  const [viewingResults, setViewingResults] = useState(null)
+  const [assessmentResults, setAssessmentResults] = useState([])
+
+  // Candidate Matrix state
+  const [candidates, setCandidates] = useState([])
+  const [candidatesLoading, setCandidatesLoading] = useState(false)
+  const [selectedCandidate, setSelectedCandidate] = useState(null)
+  const [candidateProfile, setCandidateProfile] = useState(null)
+  const [candidateSortBy, setCandidateSortBy] = useState('overall')
+
+  // Applications state
+  const [applications, setApplications] = useState([])
+  const [applicationsLoading, setApplicationsLoading] = useState(false)
 
   // Internship form state
   const [internshipForm, setInternshipForm] = useState({
@@ -84,6 +147,13 @@ export default function IndustryDashboard() {
     loadData()
   }, [])
 
+  useEffect(() => {
+    if (activeTab === 'contests') loadContests()
+    else if (activeTab === 'assessments') loadAssessments()
+    else if (activeTab === 'candidates') loadCandidates()
+    else if (activeTab === 'applications') loadApplications()
+  }, [activeTab])
+
   async function loadData() {
     setLoading(true)
     const [internshipRes, jobLinkRes] = await Promise.all([
@@ -93,6 +163,177 @@ export default function IndustryDashboard() {
     setInternships(internshipRes?.internships || [])
     setJobLinks(jobLinkRes?.jobLinks || [])
     setLoading(false)
+  }
+
+  async function loadContests() {
+    setContestsLoading(true)
+    try {
+      const res = await fetchIndustryContests()
+      setContests((res?.contests || []).filter(c => String(c.industryId) === String(user?._id) || !c.industryId))
+    } catch (e) { console.warn(e) }
+    setContestsLoading(false)
+  }
+
+  async function loadAssessments() {
+    setAssessmentsLoading(true)
+    try {
+      const res = await fetchIndustryAssessments()
+      setAssessments(res?.assessments || [])
+    } catch (e) { console.warn(e) }
+    setAssessmentsLoading(false)
+  }
+
+  async function loadCandidates() {
+    setCandidatesLoading(true)
+    try {
+      const res = await fetchCandidateMatrix({ sort: candidateSortBy })
+      setCandidates(res?.candidates || [])
+    } catch (e) { console.warn(e) }
+    setCandidatesLoading(false)
+  }
+
+  async function loadApplications() {
+    setApplicationsLoading(true)
+    try {
+      // Aggregate applications across all industry internships
+      const internRes = await fetchInternships({ industryId: user?._id })
+      const internList = internRes?.internships || []
+      const appArrays = await Promise.all(internList.map(i => fetchInternshipApplications(i._id).catch(() => ({ applications: [] }))))
+      const flat = appArrays.flatMap((r, idx) => (r?.applications || []).map(a => ({ ...a, internshipTitle: internList[idx]?.title || '' })))
+      setApplications(flat)
+    } catch (e) { console.warn(e) }
+    setApplicationsLoading(false)
+  }
+
+  async function handleOpenContestModal() {
+    setContestError('')
+    setContestForm({ title: '', description: '', role: '', durationMinutes: 120, startDate: '', endDate: '', allowedLanguages: 'C++,Java,Python,JavaScript', maxParticipants: 200 })
+    setSelectedProblems([])
+    const res = await fetchProblems({ status: 'active' }).catch(() => ({ problems: [] }))
+    setAvailableProblems(res?.problems || [])
+    setShowContestModal(true)
+  }
+
+  async function handleCreateContest(e) {
+    e.preventDefault()
+    if (!contestForm.title.trim()) { setContestError('Title is required'); return }
+    setContestSubmitting(true)
+    try {
+      await createContestApi({
+        ...contestForm,
+        problems: selectedProblems,
+        allowedLanguages: contestForm.allowedLanguages.split(',').map(s => s.trim()).filter(Boolean),
+        company: user?.name || '',
+      })
+      setShowContestModal(false)
+      setMessage('Contest created successfully!')
+      setTimeout(() => setMessage(''), 3500)
+      loadContests()
+    } catch (err) { setContestError(err.message || 'Failed to create contest') }
+    setContestSubmitting(false)
+  }
+
+  async function handlePublishContest(id) {
+    try {
+      await publishContestApi(id)
+      setMessage('Contest published!')
+      setTimeout(() => setMessage(''), 3000)
+      loadContests()
+    } catch (err) { alert(err.message || 'Publish failed') }
+  }
+
+  async function handleDeleteContest(id) {
+    if (!window.confirm('Delete this contest?')) return
+    try {
+      await deleteContestApi(id)
+      loadContests()
+    } catch (err) { alert(err.message || 'Delete failed') }
+  }
+
+  async function handleViewStandings(contest) {
+    setViewStandings(contest)
+    const res = await fetchContestStandings(contest._id).catch(() => ({ standings: [] }))
+    setStandings(res?.standings || [])
+  }
+
+  async function handleOpenAssessmentModal() {
+    setAssessmentError('')
+    setAssessmentForm({ title: '', description: '', role: '', durationMinutes: 60, startDate: '', endDate: '', maxAttempts: 1, passingScore: 60 })
+    setAssessmentQuestions([{ question: '', options: ['', '', '', ''], correctAnswer: 0, marks: 2, negativeMarks: 0, topic: '', difficulty: 'Medium', explanation: '' }])
+    setShowAssessmentModal(true)
+  }
+
+  async function handleCreateAssessment(e) {
+    e.preventDefault()
+    if (!assessmentForm.title.trim()) { setAssessmentError('Title is required'); return }
+    if (assessmentQuestions.length === 0) { setAssessmentError('Add at least one question'); return }
+    setAssessmentSubmitting(true)
+    try {
+      await createIndustryAssessmentApi({ ...assessmentForm, questions: assessmentQuestions, company: user?.name || '' })
+      setShowAssessmentModal(false)
+      setMessage('Assessment created and published!')
+      setTimeout(() => setMessage(''), 3500)
+      loadAssessments()
+    } catch (err) { setAssessmentError(err.message || 'Failed to create assessment') }
+    setAssessmentSubmitting(false)
+  }
+
+  async function handleViewAssessmentResults(assessment) {
+    setViewingResults(assessment)
+    const res = await fetchAssessmentResultsApi(assessment._id).catch(() => ({ attempts: [] }))
+    setAssessmentResults(res?.attempts || [])
+  }
+
+  async function handleDeleteAssessment(id) {
+    if (!window.confirm('Delete this assessment?')) return
+    try {
+      await deleteIndustryAssessmentApi(id)
+      loadAssessments()
+    } catch (err) { alert(err.message || 'Delete failed') }
+  }
+
+  async function handleViewCandidate(studentOrId) {
+    const studentId = typeof studentOrId === 'object' && studentOrId !== null
+      ? (studentOrId._id || studentOrId.studentId?._id || studentOrId.studentId)
+      : studentOrId
+    try {
+      const res = await fetchCandidateProfile(studentId)
+      setCandidateProfile(res?.candidate || null)
+      setSelectedCandidate(studentId)
+    } catch (err) { alert('Could not load candidate profile: ' + err.message) }
+  }
+
+  async function handlePipelineUpdate(studentOrId, stage) {
+    const studentId = typeof studentOrId === 'object' && studentOrId !== null
+      ? (studentOrId._id || studentOrId.studentId?._id || studentOrId.studentId)
+      : studentOrId
+    try {
+      await updateCandidatePipelineApi({ studentId, stage, poolName: 'Default Pool' })
+      setMessage(`Candidate moved to ${stage}`)
+      setTimeout(() => setMessage(''), 3000)
+      loadCandidates()
+    } catch (err) { alert(err.message || 'Pipeline update failed') }
+  }
+
+  function addQuestion() {
+    setAssessmentQuestions(prev => [...prev, { question: '', options: ['', '', '', ''], correctAnswer: 0, marks: 2, negativeMarks: 0, topic: '', difficulty: 'Medium', explanation: '' }])
+  }
+
+  function removeQuestion(idx) {
+    setAssessmentQuestions(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  function updateQuestion(idx, field, value) {
+    setAssessmentQuestions(prev => prev.map((q, i) => i === idx ? { ...q, [field]: value } : q))
+  }
+
+  function updateOption(qIdx, oIdx, value) {
+    setAssessmentQuestions(prev => prev.map((q, i) => {
+      if (i !== qIdx) return q
+      const opts = [...q.options]
+      opts[oIdx] = value
+      return { ...q, options: opts }
+    }))
   }
 
   function openCreateModal() {
@@ -337,36 +578,208 @@ export default function IndustryDashboard() {
       )}
 
       {/* Navigation Tabs */}
-      <div className="flex rounded-xl bg-slate-100 p-1 w-fit">
-        <button
-          type="button"
-          onClick={() => setActiveTab('internships')}
-          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-            activeTab === 'internships'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Briefcase size={14} />
-          Internships ({internships.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('job_links')}
-          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
-            activeTab === 'job_links'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Link2 size={14} />
-          Job Opportunities ({jobLinks.length})
-        </button>
+      <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
+        {[
+          { id: 'internships', label: `Internships (${internships.length})`, Icon: Briefcase },
+          { id: 'job_links', label: `Job Opportunities (${jobLinks.length})`, Icon: Link2 },
+          { id: 'contests', label: 'DSA Contests', Icon: Code2 },
+          { id: 'assessments', label: 'MCQ Assessments', Icon: ClipboardCheck },
+          { id: 'candidates', label: 'Candidate Matrix', Icon: Users },
+          { id: 'applications', label: 'Applications', Icon: FileCheck },
+          { id: 'shortlisted', label: 'Shortlisted Candidates', Icon: Star },
+        ].map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setActiveTab(id)}
+            className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
+              activeTab === id
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Icon size={13} />
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Main Content Area */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        {loading ? (
+        {/* ── DSA Contests Tab ── */}
+        {activeTab === 'contests' && (
+          <div>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">DSA Contests</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Create coding contests with problems from the Problem Library</p>
+              </div>
+              <button type="button" onClick={handleOpenContestModal} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">
+                <Plus size={14} /> Create Contest
+              </button>
+            </div>
+            {contestsLoading ? (
+              <div className="py-10 text-center text-xs text-slate-400"><Loader2 className="animate-spin inline mr-2" size={14} />Loading contests…</div>
+            ) : contests.length === 0 ? (
+              <div className="py-12 text-center">
+                <Code2 size={36} className="mx-auto text-slate-300" />
+                <p className="mt-2 text-sm font-semibold text-slate-700">No contests yet</p>
+                <p className="text-xs text-slate-400">Create a DSA contest and select problems from the Problem Library.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {contests.map(c => (
+                  <div key={c._id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                          c.status === 'Live' ? 'bg-green-50 text-green-700' :
+                          c.status === 'Ended' ? 'bg-slate-100 text-slate-500' :
+                          c.status === 'Scheduled' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'
+                        }`}>{c.status || 'Draft'}</span>
+                        <span className="text-[11px] text-slate-400">{c.problems?.length || 0} problems</span>
+                        {c.role && <span className="text-[11px] text-indigo-600 font-medium">{c.role}</span>}
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-900">{c.title}</h3>
+                      <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{c.description}</p>
+                      {c.startDate && (
+                        <p className="text-[11px] text-slate-400 mt-0.5">{new Date(c.startDate).toLocaleDateString()} — {c.endDate ? new Date(c.endDate).toLocaleDateString() : '—'} · {c.durationMinutes}min</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" onClick={() => handleViewStandings(c)} className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                        <Trophy size={12} /> Standings
+                      </button>
+                      {(c.status === 'Draft' || c.status === 'Scheduled') && (
+                        <button type="button" onClick={() => handlePublishContest(c._id)} className="flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-500">
+                          <Star size={12} /> Publish
+                        </button>
+                      )}
+                      <button type="button" onClick={() => handleDeleteContest(c._id)} className="flex items-center gap-1 rounded-lg border border-red-100 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── MCQ Assessments Tab ── */}
+        {activeTab === 'assessments' && (
+          <div>
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">MCQ / Aptitude Assessments</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Create screening assessments with MCQ questions and instant scoring</p>
+              </div>
+              <button type="button" onClick={handleOpenAssessmentModal} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">
+                <Plus size={14} /> Create Assessment
+              </button>
+            </div>
+            {assessmentsLoading ? (
+              <div className="py-10 text-center text-xs text-slate-400"><Loader2 className="animate-spin inline mr-2" size={14} />Loading…</div>
+            ) : assessments.length === 0 ? (
+              <div className="py-12 text-center">
+                <ClipboardCheck size={36} className="mx-auto text-slate-300" />
+                <p className="mt-2 text-sm font-semibold text-slate-700">No assessments yet</p>
+                <p className="text-xs text-slate-400">Create an MCQ assessment to screen candidates.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {assessments.map(a => (
+                  <div key={a._id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                          a.status === 'Published' ? 'bg-green-50 text-green-700' :
+                          a.status === 'Paused' ? 'bg-amber-50 text-amber-700' :
+                          a.status === 'Ended' ? 'bg-slate-100 text-slate-500' : 'bg-blue-50 text-blue-700'
+                        }`}>{a.status || 'Draft'}</span>
+                        <span className="text-[11px] text-slate-400">{a.questions?.length || 0} questions · {a.durationMinutes}min</span>
+                        {a.role && <span className="text-[11px] text-indigo-600 font-medium">{a.role}</span>}
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-900">{a.title}</h3>
+                      <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{a.description}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Passing: {a.passingScore}% · Max Attempts: {a.maxAttempts}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" onClick={() => handleViewAssessmentResults(a)} className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                        <BarChart3 size={12} /> Results
+                      </button>
+                      <button type="button" onClick={() => handleDeleteAssessment(a._id)} className="flex items-center gap-1 rounded-lg border border-red-100 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Candidate Matrix Tab ── */}
+        {activeTab === 'candidates' && (
+          <CandidateMatrixTab />
+        )}
+
+        {/* ── Applications Tab ── */}
+        {activeTab === 'applications' && (
+          <div>
+            <div className="mb-5">
+              <h2 className="text-base font-bold text-slate-900">InternSetu Applications</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Applications submitted via InternSetu across all your internship postings</p>
+            </div>
+            {applicationsLoading ? (
+              <div className="py-10 text-center text-xs text-slate-400"><Loader2 className="animate-spin inline mr-2" size={14} />Loading applications…</div>
+            ) : applications.length === 0 ? (
+              <div className="py-12 text-center">
+                <FileCheck size={36} className="mx-auto text-slate-300" />
+                <p className="mt-2 text-sm font-semibold text-slate-700">No applications yet</p>
+                <p className="text-xs text-slate-400">Applications from students will appear here once they apply through InternSetu.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {applications.map((app, idx) => (
+                  <div key={app._id || idx} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                          app.status === 'APPLIED_INTERNSETU' ? 'bg-blue-50 text-blue-700' :
+                          app.status === 'VISITED_COMPANY_APPLICATION' ? 'bg-amber-50 text-amber-700' :
+                          app.status === 'COMPANY_APPLICATION_CONFIRMED' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'
+                        }`}>{(app.status || '').replace(/_/g, ' ')}</span>
+                        {app.internshipTitle && <span className="text-[11px] text-slate-400">{app.internshipTitle}</span>}
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-900">{app.studentSnapshot?.name || 'Student'}</h3>
+                      <p className="text-xs text-slate-500">{app.studentSnapshot?.email || ''} · {app.studentSnapshot?.branch || ''}</p>
+                      {app.coverNote && <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">Note: {app.coverNote}</p>}
+                      <p className="text-[11px] text-slate-400 mt-0.5">{app.createdAt ? new Date(app.createdAt).toLocaleDateString() : ''}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {app.resumeUrl && (
+                        <a href={app.resumeUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50">
+                          <ExternalLink size={12} /> Resume
+                        </a>
+                      )}
+                      <button type="button" onClick={() => handleViewCandidate(app.studentId)} className="flex items-center gap-1 rounded-lg border border-indigo-200 px-3 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50">
+                        <Eye size={12} /> Profile
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Shortlisted Candidates Tab (Immediately right of Applications) ── */}
+        {activeTab === 'shortlisted' && (
+          <ShortlistedCandidatesTab onNavigateToMatrix={() => setActiveTab('candidates')} />
+        )}
+
+        {loading && (activeTab === 'internships' || activeTab === 'job_links') ? (
           <div className="py-12 text-center text-xs text-slate-400">Loading postings…</div>
         ) : activeTab === 'internships' ? (
           internships.length === 0 ? (
@@ -811,6 +1224,255 @@ export default function IndustryDashboard() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Contest Creation Modal ── */}
+      {showContestModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Create DSA Contest</h3>
+              <button type="button" onClick={() => setShowContestModal(false)} className="rounded-lg p-1.5 hover:bg-slate-100"><X size={16} /></button>
+            </div>
+            <form onSubmit={handleCreateContest} className="p-5 space-y-4">
+              {contestError && <div className="rounded-xl bg-red-50 px-4 py-2.5 text-xs text-red-700">{contestError}</div>}
+              <div>
+                <label className="text-xs font-medium text-slate-700">Contest Title *</label>
+                <input type="text" value={contestForm.title} onChange={e => setContestForm({...contestForm, title: e.target.value})} placeholder="e.g. Frontend Engineering Challenge 2025" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700">Description</label>
+                <textarea rows={2} value={contestForm.description} onChange={e => setContestForm({...contestForm, description: e.target.value})} placeholder="Contest overview..." className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Target Role</label>
+                  <input type="text" value={contestForm.role} onChange={e => setContestForm({...contestForm, role: e.target.value})} placeholder="e.g. SDE Intern" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Duration (minutes)</label>
+                  <input type="number" min={30} value={contestForm.durationMinutes} onChange={e => setContestForm({...contestForm, durationMinutes: Number(e.target.value)})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Start Date &amp; Time</label>
+                  <input type="datetime-local" value={contestForm.startDate} onChange={e => setContestForm({...contestForm, startDate: e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">End Date &amp; Time</label>
+                  <input type="datetime-local" value={contestForm.endDate} onChange={e => setContestForm({...contestForm, endDate: e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700">Allowed Languages (comma-separated)</label>
+                <input type="text" value={contestForm.allowedLanguages} onChange={e => setContestForm({...contestForm, allowedLanguages: e.target.value})} placeholder="C++,Java,Python,JavaScript" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 mb-2 block">Select Problems from Library</label>
+                {availableProblems.length === 0 ? (
+                  <p className="text-xs text-slate-400">No active problems in library. Ask admin to add problems first.</p>
+                ) : (
+                  <div className="max-h-36 overflow-y-auto space-y-1 border border-slate-100 rounded-xl p-2">
+                    {availableProblems.map(p => (
+                      <label key={p._id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-50 px-2 py-1 rounded-lg">
+                        <input type="checkbox" checked={selectedProblems.includes(p._id)} onChange={e => setSelectedProblems(prev => e.target.checked ? [...prev, p._id] : prev.filter(id => id !== p._id))} />
+                        <span className="font-medium text-slate-800">{p.title}</span>
+                        <span className="text-slate-400">{p.difficulty} · {p.topic}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[11px] text-slate-400 mt-1">{selectedProblems.length} problem(s) selected</p>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowContestModal(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="submit" disabled={contestSubmitting} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{contestSubmitting ? 'Creating…' : 'Create Contest'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Standings Modal ── */}
+      {viewStandings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Standings — {viewStandings.title}</h3>
+              <button type="button" onClick={() => setViewStandings(null)} className="rounded-lg p-1.5 hover:bg-slate-100"><X size={16} /></button>
+            </div>
+            <div className="p-5">
+              {standings.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-6">No submissions yet. Results appear after contest ends or after sync.</p>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400">
+                      <th className="py-2 text-left font-semibold">Rank</th>
+                      <th className="py-2 text-left font-semibold">Student</th>
+                      <th className="py-2 text-center font-semibold">Score</th>
+                      <th className="py-2 text-center font-semibold">Solved</th>
+                      <th className="py-2 text-center font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {standings.map((s, i) => (
+                      <tr key={s.studentId || i}>
+                        <td className="py-2 font-bold text-slate-700">#{s.rank || i + 1}</td>
+                        <td className="py-2 font-medium text-slate-800">{s.studentName || 'Student'}</td>
+                        <td className="py-2 text-center">{s.score ?? '—'}</td>
+                        <td className="py-2 text-center">{s.problemsSolved ?? '—'}</td>
+                        <td className="py-2 text-center"><span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">{s.syncStatus || 'Synced'}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Assessment Creation Modal ── */}
+      {showAssessmentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Create MCQ Assessment</h3>
+              <button type="button" onClick={() => setShowAssessmentModal(false)} className="rounded-lg p-1.5 hover:bg-slate-100"><X size={16} /></button>
+            </div>
+            <form onSubmit={handleCreateAssessment} className="p-5 space-y-4">
+              {assessmentError && <div className="rounded-xl bg-red-50 px-4 py-2.5 text-xs text-red-700">{assessmentError}</div>}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Title *</label>
+                  <input type="text" value={assessmentForm.title} onChange={e => setAssessmentForm({...assessmentForm, title: e.target.value})} placeholder="e.g. React Developer Screening" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Role</label>
+                  <input type="text" value={assessmentForm.role} onChange={e => setAssessmentForm({...assessmentForm, role: e.target.value})} placeholder="e.g. Frontend Intern" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700">Description</label>
+                <textarea rows={2} value={assessmentForm.description} onChange={e => setAssessmentForm({...assessmentForm, description: e.target.value})} placeholder="Assessment overview..." className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Duration (min)</label>
+                  <input type="number" min={10} value={assessmentForm.durationMinutes} onChange={e => setAssessmentForm({...assessmentForm, durationMinutes: Number(e.target.value)})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Passing Score (%)</label>
+                  <input type="number" min={0} max={100} value={assessmentForm.passingScore} onChange={e => setAssessmentForm({...assessmentForm, passingScore: Number(e.target.value)})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Max Attempts</label>
+                  <input type="number" min={1} value={assessmentForm.maxAttempts} onChange={e => setAssessmentForm({...assessmentForm, maxAttempts: Number(e.target.value)})} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-xs font-bold text-slate-700">Questions ({assessmentQuestions.length})</label>
+                  <button type="button" onClick={addQuestion} className="flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"><Plus size={12} /> Add Question</button>
+                </div>
+                <div className="space-y-4">
+                  {assessmentQuestions.map((q, qIdx) => (
+                    <div key={qIdx} className="rounded-xl border border-slate-200 p-4 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <label className="text-[11px] font-medium text-slate-500">Q{qIdx + 1} *</label>
+                          <textarea rows={2} value={q.question} onChange={e => updateQuestion(qIdx, 'question', e.target.value)} placeholder="Enter question text..." className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                        </div>
+                        <button type="button" onClick={() => removeQuestion(qIdx)} className="rounded-lg p-1.5 hover:bg-red-50 text-red-400 mt-4 shrink-0"><X size={13} /></button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {q.options.map((opt, oIdx) => (
+                          <div key={oIdx} className="flex items-center gap-2">
+                            <input type="radio" name={`correct-${qIdx}`} checked={q.correctAnswer === oIdx} onChange={() => updateQuestion(qIdx, 'correctAnswer', oIdx)} className="shrink-0" />
+                            <input type="text" value={opt} onChange={e => updateOption(qIdx, oIdx, e.target.value)} placeholder={`Option ${oIdx + 1}`} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus:border-indigo-500" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <label className="text-[11px] text-slate-400">Marks</label>
+                          <input type="number" min={0} value={q.marks} onChange={e => updateQuestion(qIdx, 'marks', Number(e.target.value))} className="mt-0.5 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[11px] text-slate-400">Negative Marks</label>
+                          <input type="number" min={0} value={q.negativeMarks} onChange={e => updateQuestion(qIdx, 'negativeMarks', Number(e.target.value))} className="mt-0.5 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[11px] text-slate-400">Difficulty</label>
+                          <select value={q.difficulty} onChange={e => updateQuestion(qIdx, 'difficulty', e.target.value)} className="mt-0.5 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none">
+                            <option>Easy</option><option>Medium</option><option>Hard</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowAssessmentModal(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="submit" disabled={assessmentSubmitting} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{assessmentSubmitting ? 'Creating…' : 'Create & Publish'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Assessment Results Modal ── */}
+      {viewingResults && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">Results — {viewingResults.title}</h3>
+              <button type="button" onClick={() => setViewingResults(null)} className="rounded-lg p-1.5 hover:bg-slate-100"><X size={16} /></button>
+            </div>
+            <div className="p-5">
+              {assessmentResults.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-6">No attempts yet.</p>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400">
+                      <th className="py-2 text-left font-semibold">Student</th>
+                      <th className="py-2 text-center font-semibold">Score</th>
+                      <th className="py-2 text-center font-semibold">%</th>
+                      <th className="py-2 text-center font-semibold">Passed</th>
+                      <th className="py-2 text-center font-semibold">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {assessmentResults.map((r, i) => (
+                      <tr key={r._id || i}>
+                        <td className="py-2 font-medium text-slate-800">{r.studentName || r.studentId || 'Student'}</td>
+                        <td className="py-2 text-center">{r.score}/{r.totalMarks}</td>
+                        <td className="py-2 text-center">{Math.round(r.percentage || 0)}%</td>
+                        <td className="py-2 text-center"><span className={`rounded px-2 py-0.5 text-[10px] font-bold ${r.passed ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>{r.passed ? 'Pass' : 'Fail'}</span></td>
+                        <td className="py-2 text-center text-slate-400">{r.completedAt ? new Date(r.completedAt).toLocaleDateString() : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Candidate Profile Modal ── */}
+      {selectedCandidate && (
+        <CandidateProfileModal
+          candidateId={selectedCandidate}
+          candidate={candidateProfile}
+          onClose={() => { setSelectedCandidate(null); setCandidateProfile(null) }}
+          onPipelineUpdated={loadCandidates}
+          onPipelineUpdate={handlePipelineUpdate}
+        />
       )}
     </div>
   )

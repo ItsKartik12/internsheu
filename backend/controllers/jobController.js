@@ -1,3 +1,4 @@
+import mongoose from 'mongoose'
 import Job from '../models/Job.js'
 import JobLink from '../models/JobLink.js'
 
@@ -71,6 +72,10 @@ export async function getJobs(req, res, next) {
  */
 export async function getJobById(req, res, next) {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ error: 'Job not found' })
+    }
+
     let job = await Job.findById(req.params.id)
       .populate('industryId', 'name email')
       .lean()

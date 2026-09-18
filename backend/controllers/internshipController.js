@@ -1,4 +1,7 @@
+import mongoose from 'mongoose'
 import Internship from '../models/Internship.js'
+import InternshipApplication from '../models/InternshipApplication.js'
+import StudentProfile from '../models/StudentProfile.js'
 import { isValidUrl } from '../utils/validateUrl.js'
 
 /**
@@ -46,6 +49,10 @@ export async function getInternships(req, res, next) {
  */
 export async function getInternshipById(req, res, next) {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ error: 'Internship not found' })
+    }
+
     const internship = await Internship.findById(req.params.id)
       .populate('industryId', 'name email')
       .lean()
@@ -216,6 +223,140 @@ export async function applyInternship(req, res, next) {
     await internship.save()
 
     res.json({ message: 'Application submitted successfully', applicantsCount: internship.applicantsCount })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * POST /api/internships/:id/apply-internsetu (students)
+ * Records student application in InternSetu with student snapshot
+ */
+export async function applyInternsetu(req, res, next) {
+  try {
+    const internship = await Internship.findById(req.params.id)
+    if (!internship) {
+      return res.status(404).json({ error: 'Internship not found' })
+    }
+
+    const { coverNote, resumeUrl } = req.body
+
+    // Fetch student's profile for snapshot
+    const profile = await StudentProfile.findOne({ userId: req.user._id }).lean()
+
+    const studentSkills = []
+    if (profile?.skills) {
+      for (const list of Object.values(profile.skills)) {
+        if (Array.isArray(list)) studentSkills.push(...list)
+      }
+    }
+
+    const studentSnapshot = {
+      name: profile?.basicInfo?.fullName || req.user.name,
+      email: profile?.basicInfo?.professionalEmail || req.user.email,
+      phone: profile?.basicInfo?.phone || '',
+      institute: profile?.education?.[0]?.college || '',
+      branch: profile?.education?.[0]?.branch || req.user.fieldMark || '',
+      cgpa: profile?.education?.[0]?.cgpa || 0,
+      graduationYear: profile?.education?.[0]?.graduationYear,
+      skills: studentSkills,
+    }
+
+    const application = await InternshipApplication.findOneAndUpdate(
+      { internshipId: internship._id, studentId: req.user._id },
+      {
+        industryId: internship.industryId,
+        status: 'APPLIED_INTERNSETU',
+        coverNote: coverNote?.trim() || '',
+        resumeUrl: resumeUrl?.trim() || profile?.basicInfo?.portfolioUrl || '',
+        studentSnapshot,
+        appliedAt: new Date(),
+      },
+      { upsert: true, new: true }
+    )
+
+    // Increment applicantsCount if newly applied
+    internship.applicantsCount = (internship.applicantsCount || 0) + 1
+    await internship.save()
+
+    res.status(201).json({
+      message: 'Application recorded in InternSetu. You can now visit the company application page.',
+      application,
+      companyApplicationUrl: internship.applicationUrl,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * POST /api/internships/:id/track-visit (students)
+ * Tracks that student clicked and visited company application website
+ */
+export async function trackVisitCompanyUrl(req, res, next) {
+  try {
+    const internship = await Internship.findById(req.params.id)
+    if (!internship) {
+      return res.status(404).json({ error: 'Internship not found' })
+    }
+
+    const application = await InternshipApplication.findOneAndUpdate(
+      { internshipId: internship._id, studentId: req.user._id },
+      {
+        status: 'VISITED_COMPANY_APPLICATION',
+        visitedCompanyUrlAt: new Date(),
+      },
+      { new: true }
+    )
+
+    res.json({
+      message: 'Visit tracked',
+      status: 'VISITED_COMPANY_APPLICATION',
+      application,
+      companyApplicationUrl: internship.applicationUrl,
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/internships/:id/applications (industry owner, admin)
+ */
+export async function getInternshipApplications(req, res, next) {
+  try {
+    const internship = await Internship.findById(req.params.id).lean()
+    if (!internship) {
+      return res.status(404).json({ error: 'Internship not found' })
+    }
+
+    if (req.user.role !== 'admin' && internship.industryId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Access denied' })
+    }
+
+    const applications = await InternshipApplication.find({ internshipId: req.params.id })
+      .populate('studentId', 'name email enrollmentNo fieldMark')
+      .sort({ appliedAt: -1 })
+      .lean()
+
+    res.json({ applications, total: applications.length })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/internships/my-applications (students)
+ * List student's own internship applications
+ */
+export async function getMyApplications(req, res, next) {
+  try {
+    const applications = await InternshipApplication.find({ studentId: req.user._id })
+      .populate('internshipId', 'title company location type stipend duration applicationUrl')
+      .sort({ appliedAt: -1 })
+      .lean()
+
+    res.json({ applications })
   } catch (err) {
     next(err)
   }

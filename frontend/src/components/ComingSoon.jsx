@@ -8,8 +8,7 @@ export default function ComingSoon({ title }) {
       </div>
       <h1 className="mt-4 text-base font-semibold text-slate-900">{title}</h1>
       <p className="mt-1.5 max-w-sm text-sm text-slate-500">
-        This module is being wired into the SIH build. Core dashboard, skill gap, and
-        opportunity matching are fully functional.
+        This module is actively being configured for internsetu. Stay tuned for platform updates!
       </p>
     </div>
   )

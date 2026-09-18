@@ -20,6 +20,16 @@ import IndustryDashboard from './components/IndustryDashboard'
 import AssessmentPage from './components/AssessmentPage'
 import SkillResultsPage from './components/SkillResultsPage'
 import StudentProfile from './components/StudentProfile'
+import IndustryTest from './components/IndustryTest'
+import IndustryAssessment from './components/IndustryAssessment'
+import IndustryMatrix from './components/IndustryMatrix'
+import StudentApplications from './components/StudentApplications'
+import { HelmetProvider } from 'react-helmet-async'
+import LandingPage from './components/LandingPage'
+import InternshipDetailPage from './components/InternshipDetailPage'
+import JobDetailPage from './components/JobDetailPage'
+import NotFound from './components/NotFound'
+import PublicLayout from './components/PublicLayout'
 
 import { AuthProvider, useAuth } from './context/AuthContext'
 
@@ -70,7 +80,7 @@ function ProtectedRoute({ allowedRoles }) {
     if (role === 'admin') return <Navigate to="/admin" replace />
     if (role === 'educator') return <Navigate to="/educator" replace />
     if (role === 'industry') return <Navigate to="/industry" replace />
-    return <Navigate to="/" replace />
+    return <Navigate to="/dashboard" replace />
   }
 
   return <Outlet />
@@ -116,7 +126,7 @@ function EducatorLayout() {
               <BookOpen size={16} className="text-teal-400" />
             </div>
             <div className="leading-tight">
-              <p className="text-sm font-semibold text-white">internsheu · Educator Portal</p>
+              <p className="text-sm font-semibold text-white">internsetu · Educator Portal</p>
               <p className="text-[11px] text-slate-400">{user?.name || 'Faculty'}</p>
             </div>
           </div>
@@ -174,7 +184,7 @@ function IndustryLayout() {
               <Building2 size={16} className="text-indigo-400" />
             </div>
             <div className="leading-tight">
-              <p className="text-sm font-semibold text-white">internsheu · Industry Workspace</p>
+              <p className="text-sm font-semibold text-white">internsetu · Industry Workspace</p>
               <p className="text-[11px] text-slate-400">{user?.name || 'Partner Recruiter'}</p>
             </div>
           </div>
@@ -241,7 +251,7 @@ function AdminLayout() {
             <ShieldCheck size={16} className="text-teal-400" />
           </div>
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-white">internsheu · Institutional Admin Console</p>
+            <p className="text-sm font-semibold text-white">internsetu · Institutional Admin Console</p>
             <p className="text-[11px] text-slate-400">{user?.name || 'Administrator'}</p>
           </div>
         </div>
@@ -278,26 +288,65 @@ function LearningModulesRoute() {
   return <LearningModules student={useStudentContext()} />
 }
 
+function PublicOrStudentRoute({ component: Component }) {
+  const { isAuthenticated, role, user, logout } = useAuth()
+  const student = useCurrentStudent(user)
+  const location = useLocation()
+  const [isNavOpen, setIsNavOpen] = useState(false)
+
+  useEffect(() => {
+    setIsNavOpen(false)
+  }, [location.pathname])
+
+  if (isAuthenticated && role === 'student' && student) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-slate-50">
+        <Sidebar isOpen={isNavOpen} onClose={() => setIsNavOpen(false)} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Header student={student} onLogout={logout} onMenuClick={() => setIsNavOpen(true)} />
+          <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
+            <Component />
+          </main>
+        </div>
+        <AiChatbot />
+      </div>
+    )
+  }
+
+  return (
+    <PublicLayout>
+      <Component />
+    </PublicLayout>
+  )
+}
+
 function AppRoutes() {
   return (
     <Routes>
+      {/* Public Read-Only Routes */}
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/internships" element={<PublicOrStudentRoute component={InternshipsPage} />} />
+      <Route path="/internships/:id" element={<PublicOrStudentRoute component={InternshipDetailPage} />} />
+      <Route path="/jobs" element={<PublicOrStudentRoute component={JobsPage} />} />
+      <Route path="/jobs/:id" element={<PublicOrStudentRoute component={JobDetailPage} />} />
+      <Route path="/courses" element={<PublicOrStudentRoute component={CoursesPage} />} />
 
       {/* Student Protected Routes */}
       <Route element={<ProtectedRoute allowedRoles={['student']} />}>
         <Route element={<StudentLayout />}>
-          <Route path="/" element={<StudentDashboardRoute />} />
+          <Route path="/dashboard" element={<StudentDashboardRoute />} />
           <Route path="/profile" element={<StudentProfile />} />
-          <Route path="/courses" element={<CoursesPage />} />
-          <Route path="/internships" element={<InternshipsPage />} />
-          <Route path="/jobs" element={<JobsPage />} />
           <Route path="/assessment" element={<AssessmentPage />} />
           <Route path="/assessment/results" element={<SkillResultsPage />} />
+          <Route path="/industry-test" element={<IndustryTest />} />
+          <Route path="/industry-assessment" element={<IndustryAssessment />} />
+          <Route path="/industry-matrix" element={<IndustryMatrix />} />
           <Route path="/skill-gap" element={<SkillGapAnalysisRoute />} />
           <Route path="/opportunities" element={<OpportunityFeedRoute />} />
           <Route path="/interview" element={<VideoInterviewRoute />} />
           <Route path="/learning" element={<LearningModulesRoute />} />
-          <Route path="/applications" element={<ComingSoon title="Applications" />} />
+          <Route path="/applications" element={<StudentApplications />} />
           <Route path="/mentorship" element={<ComingSoon title="Mentorship" />} />
         </Route>
       </Route>
@@ -326,15 +375,18 @@ function AppRoutes() {
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* Real 404 handler — No redirect to / */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
+    <HelmetProvider>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </HelmetProvider>
   )
 }

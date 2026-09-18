@@ -59,6 +59,11 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
         targetRole: profile.careerTarget?.targetJobRole || '',
         city: profile.basicInfo?.city || '',
         skills: allSkills,
+        achievements: profile.achievements || [],
+        internships: profile.internships || [],
+        hackathons: profile.hackathons || [],
+        certifications: profile.certifications || [],
+        projects: profile.projects || [],
         completionPercentage: StudentProfile.computeCompletion(profile),
         profileExists: true,
       }
@@ -77,6 +82,11 @@ router.get('/dashboard', authenticate, async (req, res, next) => {
         targetRole: '',
         city: '',
         skills: [],
+        achievements: [],
+        internships: [],
+        hackathons: [],
+        certifications: [],
+        projects: [],
         completionPercentage: 0,
         profileExists: false,
       }

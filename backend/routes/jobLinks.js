@@ -10,12 +10,13 @@ import { authenticate, authorize } from '../middleware/auth.js'
 
 const router = Router()
 
-router.use(authenticate)
-
+// Public browsing
 router.get('/', getJobLinks)
 router.get('/:id', getJobLinkById)
-router.post('/', authorize('industry', 'admin'), createJobLink)
-router.put('/:id', authorize('industry', 'admin'), updateJobLink)
-router.delete('/:id', authorize('industry', 'admin'), deleteJobLink)
+
+// Protected actions
+router.post('/', authenticate, authorize('industry', 'admin'), createJobLink)
+router.put('/:id', authenticate, authorize('industry', 'admin'), updateJobLink)
+router.delete('/:id', authenticate, authorize('industry', 'admin'), deleteJobLink)
 
 export default router

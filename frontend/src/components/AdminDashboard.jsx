@@ -32,6 +32,11 @@ import {
   updateJobLinkApi,
   deleteJobLinkApi,
   fetchAdminStats,
+  fetchAdminIndustryOverview,
+  fetchProblems,
+  createProblemApi,
+  updateProblemApi,
+  deleteProblemApi,
 } from '../services/api'
 
 const POPULAR_SKILLS = [
@@ -54,6 +59,8 @@ const TABS = [
   { id: 'videos', label: 'Manage Learning Videos', icon: Video },
   { id: 'jobs', label: 'Manage Job Opportunities', icon: FileText },
   { id: 'assessments', label: 'Assessment & Skill Rankings', icon: Award },
+  { id: 'problems', label: 'Problem Library', icon: Building2 },
+  { id: 'industry', label: 'Industry Oversight', icon: Users },
 ]
 
 function extractYoutubeId(input) {
@@ -489,7 +496,7 @@ function ManageVideosTab() {
                             {thumb ? (
                               <img
                                 src={thumb}
-                                alt=""
+                                alt={video.title ? `${video.title} thumbnail` : 'Video thumbnail'}
                                 className="h-full w-full object-cover opacity-80"
                               />
                             ) : (
@@ -1083,6 +1090,265 @@ export default function AdminDashboard() {
       {activeTab === 'videos' && <ManageVideosTab />}
       {activeTab === 'jobs' && <ManageJobsTab />}
       {activeTab === 'assessments' && <AdminAssessmentManager />}
+      {activeTab === 'problems' && <ProblemLibraryTab />}
+      {activeTab === 'industry' && <IndustryOversightTab />}
+    </div>
+  )
+}
+
+function ProblemLibraryTab() {
+  const [problems, setProblems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [form, setForm] = useState({ title: '', topic: '', difficulty: 'Medium', description: '', tags: '', externalProblemId: '', externalProvider: 'vjudge', status: 'active' })
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true)
+    const res = await fetchProblems().catch(() => ({ problems: [] }))
+    setProblems(res?.problems || [])
+    setLoading(false)
+  }
+
+  function openCreate() {
+    setIsEditing(false); setEditingId(null)
+    setForm({ title: '', topic: '', difficulty: 'Medium', description: '', tags: '', externalProblemId: '', externalProvider: 'vjudge', status: 'active' })
+    setShowModal(true)
+  }
+
+  function openEdit(p) {
+    setIsEditing(true); setEditingId(p._id)
+    setForm({ title: p.title || '', topic: p.topic || '', difficulty: p.difficulty || 'Medium', description: p.description || '', tags: Array.isArray(p.tags) ? p.tags.join(', ') : '', externalProblemId: p.externalProblemId || '', externalProvider: p.externalProvider || 'vjudge', status: p.status || 'active' })
+    setShowModal(true)
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!form.title.trim()) return
+    setSubmitting(true)
+    try {
+      const payload = { ...form, tags: form.tags.split(',').map(t => t.trim()).filter(Boolean) }
+      if (isEditing) { await updateProblemApi(editingId, payload); setMsg('Problem updated!') }
+      else { await createProblemApi(payload); setMsg('Problem added to library!') }
+      setShowModal(false); load()
+      setTimeout(() => setMsg(''), 3000)
+    } catch (err) { alert(err.message || 'Save failed') }
+    setSubmitting(false)
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm('Remove this problem?')) return
+    try { await deleteProblemApi(id); load() } catch (err) { alert(err.message) }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-bold text-slate-900">Problem Library</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Manage DSA problems mapped to VJudge. Problems here are selectable by Industry for contests.</p>
+        </div>
+        <button type="button" onClick={openCreate} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500"><Plus size={14} /> Add Problem</button>
+      </div>
+      {msg && <div className="rounded-xl bg-teal-50 px-4 py-2.5 text-xs font-medium text-teal-800">{msg}</div>}
+      {loading ? (
+        <div className="py-10 text-center text-xs text-slate-400"><Loader2 className="animate-spin inline mr-2" size={14} />Loading library…</div>
+      ) : problems.length === 0 ? (
+        <div className="py-12 text-center">
+          <Building2 size={36} className="mx-auto text-slate-300" />
+          <p className="mt-2 text-sm font-semibold text-slate-700">No problems yet</p>
+          <p className="text-xs text-slate-400">Add DSA problems mapped to VJudge so Industry can use them in contests.</p>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 border-b border-slate-100">
+              <tr>
+                <th className="py-3 px-4 text-left font-semibold text-slate-500">Title</th>
+                <th className="py-3 px-4 text-left font-semibold text-slate-500">Topic</th>
+                <th className="py-3 px-4 text-center font-semibold text-slate-500">Difficulty</th>
+                <th className="py-3 px-4 text-center font-semibold text-slate-500">VJudge ID</th>
+                <th className="py-3 px-4 text-center font-semibold text-slate-500">Status</th>
+                <th className="py-3 px-4 text-center font-semibold text-slate-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {problems.map(p => (
+                <tr key={p._id} className="hover:bg-slate-50">
+                  <td className="py-3 px-4 font-medium text-slate-800">{p.title}</td>
+                  <td className="py-3 px-4 text-slate-500">{p.topic}</td>
+                  <td className="py-3 px-4 text-center">
+                    <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                      p.difficulty === 'Easy' ? 'bg-green-50 text-green-700' :
+                      p.difficulty === 'Hard' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+                    }`}>{p.difficulty}</span>
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    {p.externalProblemId ? (
+                      <a href={`https://vjudge.net/problem/${p.externalProblemId}`} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center gap-1 justify-center">
+                        {p.externalProblemId} <ExternalLink size={10} />
+                      </a>
+                    ) : <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${p.status === 'active' ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-500'}`}>{p.status}</span>
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <div className="flex items-center gap-2 justify-center">
+                      <button type="button" onClick={() => openEdit(p)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"><Pencil size={11} /></button>
+                      <button type="button" onClick={() => handleDelete(p._id)} className="rounded-lg border border-red-100 px-2 py-1 text-xs text-red-600 hover:bg-red-50"><Trash2 size={11} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">{isEditing ? 'Edit Problem' : 'Add Problem'}</h3>
+              <button type="button" onClick={() => setShowModal(false)} className="rounded-lg p-1.5 hover:bg-slate-100"><X size={16} /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-700">Title *</label>
+                <input type="text" value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="e.g. Two Sum" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Topic</label>
+                  <input type="text" value={form.topic} onChange={e => setForm({...form, topic: e.target.value})} placeholder="e.g. Arrays, DP" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Difficulty</label>
+                  <select value={form.difficulty} onChange={e => setForm({...form, difficulty: e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:border-indigo-500">
+                    <option>Easy</option><option>Medium</option><option>Hard</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700">Description / Problem Statement</label>
+                <textarea rows={3} value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Brief problem description or constraints..." className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700">Tags (comma-separated)</label>
+                <input type="text" value={form.tags} onChange={e => setForm({...form, tags: e.target.value})} placeholder="e.g. hash-map, two-pointers" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-700">VJudge Problem ID</label>
+                  <input type="text" value={form.externalProblemId} onChange={e => setForm({...form, externalProblemId: e.target.value})} placeholder="e.g. LeetCode-1" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700">Status</label>
+                  <select value={form.status} onChange={e => setForm({...form, status: e.target.value})} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:border-indigo-500">
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowModal(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="submit" disabled={submitting} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{submitting ? 'Saving…' : isEditing ? 'Update Problem' : 'Add to Library'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function IndustryOversightTab() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetchAdminIndustryOverview().then(res => {
+      setData(res)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="py-10 text-center text-xs text-slate-400"><Loader2 className="animate-spin inline mr-2" size={14} />Loading industry data…</div>
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-bold text-slate-900">Industry Contests &amp; Assessments Oversight</h2>
+        <p className="text-xs text-slate-500 mt-0.5">Platform-wide view of all industry contests, assessments, and screening activity.</p>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Contests', value: data?.totalContests ?? 0 },
+          { label: 'Total Assessments', value: data?.totalIndustryAssessments ?? 0 },
+          { label: 'Problems in Library', value: data?.totalProblems ?? 0 },
+          { label: 'Candidates Shortlisted', value: data?.totalShortlisted ?? 0 },
+        ].map(s => (
+          <div key={s.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-500">{s.label}</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {(data?.contests || []).length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-900 mb-4">Recent DSA Contests</h3>
+          <div className="divide-y divide-slate-100">
+            {(data.contests || []).slice(0, 10).map((c, i) => (
+              <div key={c._id || i} className="py-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-800">{c.title}</p>
+                  <p className="text-[11px] text-slate-400">{c.company || ''} · {c.problems?.length || 0} problems</p>
+                </div>
+                <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                  c.status === 'Live' ? 'bg-green-50 text-green-700' :
+                  c.status === 'Ended' ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-700'
+                }`}>{c.status || 'Draft'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(data?.assessments || []).length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-900 mb-4">Recent MCQ Assessments</h3>
+          <div className="divide-y divide-slate-100">
+            {(data.assessments || []).slice(0, 10).map((a, i) => (
+              <div key={a._id || i} className="py-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-800">{a.title}</p>
+                  <p className="text-[11px] text-slate-400">{a.company || ''} · {a.questions?.length || 0} questions · {a.durationMinutes}min</p>
+                </div>
+                <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                  a.status === 'Published' ? 'bg-green-50 text-green-700' :
+                  a.status === 'Paused' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'
+                }`}>{a.status || 'Draft'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(!data?.contests?.length && !data?.assessments?.length) && (
+        <div className="py-12 text-center rounded-2xl border border-slate-200 bg-white">
+          <Building2 size={36} className="mx-auto text-slate-300" />
+          <p className="mt-2 text-sm font-semibold text-slate-700">No industry activity yet</p>
+          <p className="text-xs text-slate-400">Industry partners haven't created any contests or assessments yet.</p>
+        </div>
+      )}
     </div>
   )
 }

@@ -16,7 +16,7 @@ import { loginUser, registerUser } from '../services/api'
 import { getUserByIdentifier } from '../data/mockDatabase'
 
 function resolveLandingPath(role, from) {
-  if (from && from !== '/login') return from
+  if (from && from !== '/login' && from !== '/') return from
   switch (role) {
     case 'admin':
       return '/admin'
@@ -26,7 +26,7 @@ function resolveLandingPath(role, from) {
       return '/industry'
     case 'student':
     default:
-      return '/'
+      return '/dashboard'
   }
 }
 
@@ -137,7 +137,8 @@ export default function Login() {
           enrollmentNo: matchedDemo.role === 'student' ? '2024CS001' : undefined,
           studentId: matchedDemo.role === 'student' ? 'STU-001' : undefined,
         }
-        login({ user: fallbackUser })
+        const mockToken = `mock-token-${matchedDemo.role}-${Date.now()}`
+        login({ token: mockToken, user: fallbackUser })
         navigate(resolveLandingPath(fallbackUser.role, redirectFrom), { replace: true })
         return
       }
@@ -446,7 +447,7 @@ export default function Login() {
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1 rounded-full bg-teal-400/10 px-3 py-1 text-xs font-semibold text-teal-300 ring-1 ring-inset ring-teal-400/20">
               <span className="h-1.5 w-1.5 rounded-full bg-teal-400 animate-pulse" />
-              SIH 2026 Active Portal
+              internsetu Active Portal
             </span>
           </div>
 

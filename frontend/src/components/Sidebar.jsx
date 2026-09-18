@@ -12,16 +12,22 @@ import {
   Building2,
   X,
   UserCircle,
+  Code2,
+  ClipboardCheck,
+  BarChart3,
 } from 'lucide-react'
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/profile', label: 'My Profile', icon: UserCircle },
   { to: '/courses', label: 'Verified Courses', icon: BookOpen },
   { to: '/internships', label: 'Internships', icon: Briefcase },
   { to: '/jobs', label: 'Career Jobs', icon: Building2 },
   { to: '/assessment', label: 'Skill Assessments', icon: Award },
   { to: '/assessment/results', label: 'Skill Matrix', icon: Sparkles },
+  { to: '/industry-test', label: 'Industry Test', icon: Code2 },
+  { to: '/industry-assessment', label: 'Industry Assessment', icon: ClipboardCheck },
+  { to: '/industry-matrix', label: 'Industry Matrix', icon: BarChart3 },
   { to: '/interview', label: 'AI Mock Interview', icon: Video },
   { to: '/learning', label: 'Learning Center', icon: BookOpen },
   { to: '/applications', label: 'Applications', icon: FileText },

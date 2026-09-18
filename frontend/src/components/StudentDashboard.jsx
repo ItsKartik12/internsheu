@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   ArrowUpRight, Award, Radar, Briefcase, TrendingUp,
   Wifi, WifiOff, User, FolderGit2, Code2, Trophy,
-  GraduationCap, Loader2, AlertCircle,
+  GraduationCap, Loader2, AlertCircle, ExternalLink,
 } from 'lucide-react'
 import { fetchStudentDashboard, fetchProfile } from '../services/api'
 
@@ -123,6 +123,8 @@ export default function StudentDashboard({ student: propStudent }) {
         if (profRes?.profile) {
           setProfileData(profRes.profile)
           setCompletionPercentage(profRes.completionPercentage ?? 0)
+        } else if (profRes && typeof profRes === 'object' && !profRes.error) {
+          setProfileData(profRes)
         }
       } catch (err) {
         if (!cancelled) {
@@ -168,6 +170,30 @@ export default function StudentDashboard({ student: propStudent }) {
   const student = dashboardData?.student || {}
   const profile = profileData || {}
   const profileExists = student.profileExists || !profile.isNew
+
+  const achievements = (
+    (Array.isArray(profile.achievements) && profile.achievements.length > 0)
+      ? profile.achievements
+      : (Array.isArray(student.achievements) ? student.achievements : [])
+  ).filter((a) => a && (a.title || a.organization || a.description))
+
+  const internships = (
+    (Array.isArray(profile.internships) && profile.internships.length > 0)
+      ? profile.internships
+      : (Array.isArray(student.internships) ? student.internships : [])
+  )
+
+  const hackathons = (
+    (Array.isArray(profile.hackathons) && profile.hackathons.length > 0)
+      ? profile.hackathons
+      : (Array.isArray(student.hackathons) ? student.hackathons : [])
+  )
+
+  const certifications = (
+    (Array.isArray(profile.certifications) && profile.certifications.length > 0)
+      ? profile.certifications
+      : (Array.isArray(student.certifications) ? student.certifications : [])
+  )
   const matchedOpportunities = (dashboardData?.matchedOpportunities || []).map((opp) => ({
     ...opp,
     company: typeof opp.company === 'string'
@@ -412,14 +438,19 @@ export default function StudentDashboard({ student: propStudent }) {
 
         {/* Experience & Achievements */}
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card">
-          <h2 className="text-sm font-semibold text-slate-900">Experience & Achievements</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-900">Experience & Achievements</h2>
+            <Link to="/profile" className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
+              Manage
+            </Link>
+          </div>
           <div className="mt-4 space-y-4">
             {/* Internships */}
-            {(profile.internships || []).length > 0 ? (
+            {internships.length > 0 ? (
               <div>
                 <p className="mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Internships</p>
-                {(profile.internships || []).slice(0, 2).map((int, i) => (
-                  <div key={i} className="mb-2 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                {internships.slice(0, 3).map((int, i) => (
+                  <div key={int._id || i} className="mb-2 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                     <p className="text-sm font-medium text-slate-900">{int.role || 'Role'}</p>
                     <p className="text-xs text-slate-500">{int.companyName} {int.location && `· ${int.location}`}</p>
                   </div>
@@ -427,12 +458,53 @@ export default function StudentDashboard({ student: propStudent }) {
               </div>
             ) : null}
 
+            {/* Achievements */}
+            {achievements.length > 0 ? (
+              <div>
+                <p className="mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Achievements</p>
+                <div className="space-y-2">
+                  {achievements.map((ach, i) => (
+                    <div key={ach._id || i} className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2.5">
+                          <Award size={16} className="mt-0.5 shrink-0 text-amber-500" />
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">{ach.title}</p>
+                            <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+                              {ach.organization && <span>{ach.organization}</span>}
+                              {ach.organization && (ach.dateOrYear || ach.year || ach.date) && <span>·</span>}
+                              {(ach.dateOrYear || ach.year || ach.date) && (
+                                <span>{ach.dateOrYear || ach.year || ach.date}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {ach.credentialUrl && (
+                          <a
+                            href={ach.credentialUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-600 hover:bg-indigo-100 hover:underline"
+                          >
+                            Credential <ExternalLink size={11} />
+                          </a>
+                        )}
+                      </div>
+                      {ach.description && (
+                        <p className="mt-1.5 pl-6.5 text-xs text-slate-600">{ach.description}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             {/* Hackathons */}
-            {(profile.hackathons || []).length > 0 ? (
+            {hackathons.length > 0 ? (
               <div>
                 <p className="mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Hackathons</p>
-                {(profile.hackathons || []).slice(0, 2).map((h, i) => (
-                  <div key={i} className="mb-2 flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                {hackathons.slice(0, 3).map((h, i) => (
+                  <div key={h._id || i} className="mb-2 flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                     <Trophy size={14} className="shrink-0 text-amber-500" />
                     <div>
                       <p className="text-sm font-medium text-slate-900">{h.name}</p>
@@ -444,11 +516,11 @@ export default function StudentDashboard({ student: propStudent }) {
             ) : null}
 
             {/* Certifications */}
-            {(profile.certifications || []).length > 0 ? (
+            {certifications.length > 0 ? (
               <div>
                 <p className="mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Certifications</p>
-                {(profile.certifications || []).slice(0, 2).map((c, i) => (
-                  <div key={i} className="mb-2 flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                {certifications.slice(0, 3).map((c, i) => (
+                  <div key={c._id || i} className="mb-2 flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                     <Award size={14} className="shrink-0 text-indigo-500" />
                     <div>
                       <p className="text-sm font-medium text-slate-900">{c.name}</p>
@@ -460,10 +532,11 @@ export default function StudentDashboard({ student: propStudent }) {
             ) : null}
 
             {/* Empty state if nothing */}
-            {(profile.internships || []).length === 0 &&
-             (profile.hackathons || []).length === 0 &&
-             (profile.certifications || []).length === 0 && (
-              <EmptyState title="No experience or achievements yet" message="Add internships, hackathons, and certifications to your profile" actionLabel="Add Experience" actionTo="/profile" />
+            {internships.length === 0 &&
+             achievements.length === 0 &&
+             hackathons.length === 0 &&
+             certifications.length === 0 && (
+              <EmptyState title="No experience or achievements yet" message="Add internships, hackathons, achievements, and certifications to your profile" actionLabel="Add Experience" actionTo="/profile" />
             )}
           </div>
         </div>

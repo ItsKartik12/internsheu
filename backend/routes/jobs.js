@@ -5,19 +5,28 @@ import {
   createJob,
   updateJob,
   deleteJob,
-  applyJob,
 } from '../controllers/jobController.js'
+import {
+  applyJob,
+  trackVisitJobPortal,
+  getMyJobApplications,
+} from '../controllers/jobApplicationController.js'
 import { authenticate, authorize } from '../middleware/auth.js'
 
 const router = Router()
 
-router.use(authenticate)
+// Student specific application routes (Must be defined before /:id)
+router.get('/my-applications', authenticate, authorize('student'), getMyJobApplications)
+router.post('/:id/apply', authenticate, authorize('student'), applyJob)
+router.post('/:id/track-visit', authenticate, authorize('student'), trackVisitJobPortal)
 
+// Public browsing
 router.get('/', getJobs)
 router.get('/:id', getJobById)
-router.post('/', authorize('admin'), createJob)
-router.put('/:id', authorize('industry', 'admin'), updateJob)
-router.delete('/:id', authorize('industry', 'admin'), deleteJob)
-router.post('/:id/apply', authorize('student'), applyJob)
+
+// Protected actions
+router.post('/', authenticate, authorize('admin'), createJob)
+router.put('/:id', authenticate, authorize('industry', 'admin'), updateJob)
+router.delete('/:id', authenticate, authorize('industry', 'admin'), deleteJob)
 
 export default router

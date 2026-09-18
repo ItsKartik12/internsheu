@@ -2,12 +2,67 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><rect width=%2224%22 height=%2224%22 rx=%226%22 fill=%22%230f172a%22/><text x=%2212%22 y=%2217%22 font-size=%2214%22 fill=%22%2314b8a6%22 text-anchor=%22middle%22 font-family=%22sans-serif%22>i</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>internsetu — Academia-Industry Collaboration Portal</title>
+    <title>InternSetu — Academia-Industry Collaboration Portal</title>
+    <meta name="description" content="InternSetu is an AI-powered academia-industry collaboration platform bridging student engineering skills with verified industry internships, skill gap analysis, DSA coding contests, and direct recruitment pipelines." />
+    <meta name="keywords" content="InternSetu, internships, engineering students, academia industry collaboration, skill gap analysis, DSA contest, AI mock interview, campus placements, tech careers" />
+    <meta name="author" content="InternSetu Team" />
+    <link rel="canonical" href="https://internsetu.vercel.app/" />
+
+    <!-- Open Graph / Facebook / LinkedIn -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="InternSetu" />
+    <meta property="og:url" content="https://internsetu.vercel.app/" />
+    <meta property="og:title" content="InternSetu — Academia-Industry Collaboration Portal" />
+    <meta property="og:description" content="AI-powered platform bridging student skills with verified industry internships, skill gap analysis, DSA contests, and direct recruitment pipelines." />
+    <meta property="og:image" content="https://internsetu.vercel.app/favicon.svg" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://internsetu.vercel.app/" />
+    <meta name="twitter:title" content="InternSetu — Academia-Industry Collaboration Portal" />
+    <meta name="twitter:description" content="AI-powered platform bridging student skills with verified industry internships, skill gap analysis, DSA contests, and direct recruitment pipelines." />
+    <meta name="twitter:image" content="https://internsetu.vercel.app/favicon.svg" />
+
+    <!-- Favicon & Web App Manifest -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#0d9488" />
+
+    <!-- Performance & Web Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Structured Data (JSON-LD): Organization & WebSite Graph -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://internsetu.vercel.app/#organization",
+          "name": "InternSetu",
+          "url": "https://internsetu.vercel.app",
+          "logo": "https://internsetu.vercel.app/favicon.svg",
+          "description": "Academia-Industry Collaboration Portal empowering students with verified skill assessments, DSA contests, and direct recruitment pipelines.",
+          "sameAs": [
+            "https://github.com/VishalChauhan85/internsheu"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://internsetu.vercel.app/#website",
+          "url": "https://internsetu.vercel.app",
+          "name": "InternSetu",
+          "publisher": {
+            "@id": "https://internsetu.vercel.app/#organization"
+          }
+        }
+      ]
+    }
+    </script>
   </head>
   <body class="bg-slate-50">
     <div id="root"></div>

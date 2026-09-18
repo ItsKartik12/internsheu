@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   Briefcase,
   Search,
@@ -12,12 +13,20 @@ import {
   Send,
   Users,
 } from 'lucide-react'
-import { fetchInternships, applyInternshipApi, createInternshipApi } from '../services/api'
+import {
+  fetchInternships,
+  applyInternshipApi,
+  createInternshipApi,
+  applyInternsetuApi,
+  trackVisitCompanyUrlApi,
+  fetchMyApplications,
+} from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
 const WORK_TYPES = ['All', 'Remote', 'Hybrid', 'On-site']
 
 export default function InternshipsPage() {
+  const navigate = useNavigate()
   const { user } = useAuth()
   const isIndustryOrAdmin = user?.role === 'industry' || user?.role === 'admin'
 
@@ -47,6 +56,21 @@ export default function InternshipsPage() {
     loadInternships()
   }, [search, selectedType])
 
+  useEffect(() => {
+    if (user?.role === 'student') {
+      fetchMyApplications()
+        .then((res) => {
+          if (res?.applications && Array.isArray(res.applications)) {
+            const ids = new Set(
+              res.applications.map((a) => (a.internshipId?._id || a.internshipId))
+            )
+            setAppliedIds(ids)
+          }
+        })
+        .catch((err) => console.warn('Could not fetch student applications:', err.message))
+    }
+  }, [user])
+
   async function loadInternships() {
     setLoading(true)
     const data = await fetchInternships({
@@ -57,8 +81,42 @@ export default function InternshipsPage() {
     setLoading(false)
   }
 
+  async function handleVisitAndApply(item, e) {
+    if (e) e.stopPropagation()
+    if (!item?.applicationUrl) return
+
+    if (!user) {
+      navigate('/login', { state: { from: '/internships' } })
+      return
+    }
+
+    if (user?.role === 'student') {
+      try {
+        await applyInternsetuApi(item._id, {
+          coverNote: '',
+          resumeUrl: '',
+        })
+        await trackVisitCompanyUrlApi(item._id)
+        setAppliedIds((prev) => new Set([...prev, item._id]))
+        setInternships((prev) =>
+          prev.map((it) => (it._id === item._id ? { ...it, applicantsCount: (it.applicantsCount || 0) + 1 } : it))
+        )
+        setMessage('Application recorded in InternSetu. Opening company application portal…')
+        setTimeout(() => setMessage(''), 4000)
+      } catch (err) {
+        console.warn('InternSetu application tracking notice:', err.message)
+      }
+    }
+
+    window.open(item.applicationUrl, '_blank', 'noopener,noreferrer')
+  }
+
   async function handleApply(e, id) {
     e.stopPropagation()
+    if (!user) {
+      navigate('/login', { state: { from: '/internships' } })
+      return
+    }
     try {
       await applyInternshipApi(id)
       setAppliedIds((prev) => new Set([...prev, id]))
@@ -217,9 +275,15 @@ export default function InternshipsPage() {
                     </span>
                   </div>
 
-                  <h3 className="mt-2.5 text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                    {item.title}
-                  </h3>
+                  <h2 className="mt-2.5 text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
+                    <Link
+                      to={`/internships/${item._id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="hover:underline focus:outline-none"
+                    >
+                      {item.title}
+                    </Link>
+                  </h2>
 
                   <p className="mt-2 text-xs leading-relaxed text-slate-500 line-clamp-3">
                     {item.description}
@@ -253,15 +317,15 @@ export default function InternshipsPage() {
                     </div>
 
                     {item.applicationUrl ? (
-                      <a
-                        href={item.applicationUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-500"
+                      <button
+                        type="button"
+                        onClick={(e) => handleVisitAndApply(item, e)}
+                        className={`flex items-center gap-1 rounded-lg px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition ${
+                          isApplied ? 'bg-teal-600 hover:bg-teal-500' : 'bg-blue-600 hover:bg-blue-500'
+                        }`}
                       >
-                        Visit & Apply ↗
-                      </a>
+                        {isApplied ? '✓ Applied (Visit ↗)' : 'Visit & Apply ↗'}
+                      </button>
                     ) : (
                       <span
                         onClick={(e) => e.stopPropagation()}
@@ -282,6 +346,9 @@ export default function InternshipsPage() {
       {/* Detail Modal */}
       {selectedItem && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Internship details"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
           onClick={() => setSelectedItem(null)}
         >
@@ -340,6 +407,12 @@ export default function InternshipsPage() {
             </div>
 
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+              <Link
+                to={`/internships/${selectedItem._id}`}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Full Page ↗
+              </Link>
               <button
                 type="button"
                 onClick={() => setSelectedItem(null)}
@@ -348,14 +421,15 @@ export default function InternshipsPage() {
                 Close
               </button>
               {selectedItem.applicationUrl ? (
-                <a
-                  href={selectedItem.applicationUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 rounded-xl bg-blue-600 px-5 py-2 text-xs font-semibold text-white shadow hover:bg-blue-500"
+                <button
+                  type="button"
+                  onClick={(e) => handleVisitAndApply(selectedItem, e)}
+                  className={`flex items-center gap-1 rounded-xl px-5 py-2 text-xs font-semibold text-white shadow transition ${
+                    appliedIds.has(selectedItem._id) ? 'bg-teal-600 hover:bg-teal-500' : 'bg-blue-600 hover:bg-blue-500'
+                  }`}
                 >
-                  Visit & Apply ↗
-                </a>
+                  {appliedIds.has(selectedItem._id) ? '✓ Applied (Re-visit ↗)' : 'Visit & Apply ↗'}
+                </button>
               ) : (
                 <button
                   type="button"
@@ -373,6 +447,9 @@ export default function InternshipsPage() {
       {/* Post Modal */}
       {showPostModal && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Post internship"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4"
           onClick={() => setShowPostModal(false)}
         >
