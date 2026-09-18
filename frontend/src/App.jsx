@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense, useMemo } from 'react'
 import { Routes, Route, Navigate, Outlet, useLocation, useOutletContext, NavLink } from 'react-router-dom'
 import { LogOut, ShieldCheck, BookOpen, Building2, Briefcase } from 'lucide-react'
 import Sidebar from './components/Sidebar'
@@ -40,30 +40,32 @@ const StudentApplications = lazy(() => import('./components/StudentApplications'
 import { AuthProvider, useAuth } from './context/AuthContext'
 
 function useCurrentStudent(user) {
-  if (!user) return null
+  return useMemo(() => {
+    if (!user) return null
 
-  const name = user.name || 'Student'
-  const initials = name
-    .split(' ')
-    .filter(Boolean)
-    .map((n) => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || 'ST'
+    const name = user.name || 'Student'
+    const initials = name
+      .split(' ')
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'ST'
 
-  return {
-    id: user._id || user.studentId || 'STU-001',
-    name,
-    email: user.email || '',
-    enrollmentNo: user.enrollmentNo || '',
-    branch: user.fieldMark || 'Computer Science & Engineering',
-    institute: user.institute || 'Engineering College',
-    semester: user.semester || 1,
-    cgpa: user.cgpa || 0,
-    targetRole: user.targetRole || 'ROLE-003',
-    avatarInitials: initials,
-    skills: user.skills || [],
-  }
+    return {
+      id: user._id || user.studentId || 'STU-001',
+      name,
+      email: user.email || '',
+      enrollmentNo: user.enrollmentNo || '',
+      branch: user.fieldMark || 'Computer Science & Engineering',
+      institute: user.institute || 'Engineering College',
+      semester: user.semester || 1,
+      cgpa: user.cgpa || 0,
+      targetRole: user.targetRole || 'ROLE-003',
+      avatarInitials: initials,
+      skills: user.skills || [],
+    }
+  }, [user])
 }
 
 function useStudentContext() {

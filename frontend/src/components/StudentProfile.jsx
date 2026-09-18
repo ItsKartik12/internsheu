@@ -326,6 +326,9 @@ function getDefaultProfile(user) {
 
 export default function StudentProfile() {
   const { user } = useAuth()
+  const userRef = useRef(user)
+  userRef.current = user
+
   const [profile, setProfile] = useState(() => getDefaultProfile(user))
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -344,11 +347,11 @@ export default function StudentProfile() {
         if (res?.profile) {
           setProfile(res.profile)
         } else {
-          setProfile((prev) => prev || getDefaultProfile(user))
+          setProfile((prev) => prev || getDefaultProfile(userRef.current))
         }
       } catch {
         if (!cancelled) {
-          setProfile((prev) => prev || getDefaultProfile(user))
+          setProfile((prev) => prev || getDefaultProfile(userRef.current))
         }
       } finally {
         if (!cancelled) setIsLoading(false)
@@ -356,7 +359,7 @@ export default function StudentProfile() {
     }
     load()
     return () => { cancelled = true }
-  }, [user])
+  }, [])
 
   function toggleSection(id) {
     setOpenSections((prev) => {

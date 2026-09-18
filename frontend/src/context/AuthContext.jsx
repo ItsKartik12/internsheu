@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 import { fetchCurrentUser } from '../services/api'
 
 const AuthContext = createContext(null)
@@ -16,47 +16,63 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('token') || null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Verify and sync token on initial mount
+  // Verify and sync token on initial mount only
   useEffect(() => {
+    let isMounted = true
     async function syncSession() {
-      let activeToken = token
-      if (!activeToken && user) {
+      let activeToken = localStorage.getItem('token')
+      const storedUser = localStorage.getItem('user')
+      let currentUser = null
+      try {
+        currentUser = storedUser ? JSON.parse(storedUser) : null
+      } catch {}
+
+      if (!activeToken && currentUser) {
         // Auto-recover session bridge token so backend queries succeed
-        const role = user.role || 'student'
+        const role = currentUser.role || 'student'
         activeToken = `mock-token-${role}-${Date.now()}`
         setToken(activeToken)
         localStorage.setItem('token', activeToken)
       }
 
       if (activeToken) {
-        const response = await fetchCurrentUser()
-        if (response?.user) {
-          setUser(response.user)
-          localStorage.setItem('user', JSON.stringify(response.user))
+        try {
+          const response = await fetchCurrentUser()
+          if (isMounted && response?.user) {
+            setUser(response.user)
+            localStorage.setItem('user', JSON.stringify(response.user))
+          }
+        } catch {
+          // Keep stored user on network error
         }
       }
-      setIsLoading(false)
+      if (isMounted) {
+        setIsLoading(false)
+      }
     }
     syncSession()
-  }, [token, user])
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
-  function login(authData) {
+  const login = useCallback((authData) => {
     const userData = authData.user || authData
     const authToken = authData.token || `mock-token-${userData?.role || 'student'}-${Date.now()}`
     setToken(authToken)
     localStorage.setItem('token', authToken)
     setUser(userData)
     localStorage.setItem('user', JSON.stringify(userData))
-  }
+  }, [])
 
-  function logout() {
+  const logout = useCallback(() => {
     setToken(null)
     setUser(null)
     localStorage.removeItem('token')
     localStorage.removeItem('user')
-  }
+  }, [])
 
-  const value = {
+  const value = useMemo(() => ({
     user,
     token,
     role: user?.role ?? null,
@@ -64,7 +80,7 @@ export function AuthProvider({ children }) {
     isLoading,
     login,
     logout,
-  }
+  }), [user, token, isLoading, login, logout])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
