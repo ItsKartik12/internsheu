@@ -336,7 +336,7 @@ export default function StudentProfile() {
   const [openSections, setOpenSections] = useState(new Set(['basic-info']))
   const formRef = useRef(null)
 
-  // Fetch profile on mount
+  // Fetch profile once on mount - prevents reload on cursor movement
   useEffect(() => {
     let cancelled = false
     async function load() {
