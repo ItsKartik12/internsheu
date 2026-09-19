@@ -987,8 +987,43 @@ export async function bulkUnlockShortlistedApi(payload = {}) {
   })
 }
 
+// ── Industry Posting Platform Fee & Payment APIs ──
+export async function getPaymentConfigApi() {
+  return safeRequest('/api/payments/config', {}, {
+    gateway: 'development_test',
+    isRazorpayConfigured: false,
+    keyId: null,
+  })
+}
+
+export async function calculatePostingFeeApi(monthlyStipend, candidatesRequired) {
+  return request('/api/payments/calculate-fee', {
+    method: 'POST',
+    body: JSON.stringify({ monthlyStipend, candidatesRequired }),
+  })
+}
+
+export async function createPostingOrderApi(payload) {
+  return request('/api/payments/create-posting-order', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function verifyAndPublishPostingApi(payload) {
+  return request('/api/payments/verify-and-publish', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function getMyPaymentTransactionsApi() {
+  return safeRequest('/api/payments/my-transactions', {}, { transactions: [] })
+}
+
 export const apiConfig = {
   baseUrl: API_BASE_URL,
   isConfigured: Boolean(API_BASE_URL),
 }
+
 

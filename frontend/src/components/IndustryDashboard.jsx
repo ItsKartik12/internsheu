@@ -23,6 +23,8 @@ import {
   Loader2,
   ChevronDown,
   Star,
+  ShieldCheck,
+  CreditCard,
 } from 'lucide-react'
 import {
   fetchInternships,
@@ -47,6 +49,9 @@ import {
   updateCandidatePipelineApi,
   fetchInternshipApplications,
   fetchProblems,
+  getPaymentConfigApi,
+  createPostingOrderApi,
+  verifyAndPublishPostingApi,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import CandidateProfileModal from './CandidateProfileModal'
@@ -116,13 +121,25 @@ export default function IndustryDashboard() {
   const [applications, setApplications] = useState([])
   const [applicationsLoading, setApplicationsLoading] = useState(false)
 
+  // Payment Gate state
+  const [paymentConfig, setPaymentConfig] = useState({
+    isConfigured: false,
+    keyId: null,
+    gateway: 'none',
+  })
+  const [modalStep, setModalStep] = useState('form') // 'form' | 'review'
+  const [isPaying, setIsPaying] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
+
   // Internship form state
   const [internshipForm, setInternshipForm] = useState({
     title: '',
     company: user?.name || '',
     location: 'Remote',
     type: 'Remote',
-    stipend: '₹20,000 / month',
+    stipend: '₹25,000 / month',
+    monthlyStipend: 25000,
+    candidatesRequired: 4,
     duration: '3 Months',
     skills: '',
     description: '',
@@ -141,11 +158,59 @@ export default function IndustryDashboard() {
     jobUrl: '',
     companyWebsite: '',
     deadline: '',
+    monthlySalary: 30000,
+    candidatesRequired: 1,
   })
+
+  // Platform Fee calculation helper: 1% × Monthly Stipend × Candidates Required
+  function computeFee(stipendVal, candidatesVal) {
+    let stipend = 0
+    if (typeof stipendVal === 'number') {
+      stipend = Math.max(0, stipendVal)
+    } else if (stipendVal) {
+      const num = String(stipendVal).replace(/[^0-9]/g, '')
+      stipend = num ? parseInt(num, 10) : 0
+    }
+
+    const candidates = Math.max(1, parseInt(candidatesVal, 10) || 1)
+    const fee = Math.round(stipend * candidates * 0.01)
+
+    return {
+      monthlyStipend: stipend,
+      candidatesRequired: candidates,
+      platformFee: fee,
+      formula: `1% × ₹${stipend.toLocaleString('en-IN')} × ${candidates}`,
+    }
+  }
+
+  function loadRazorpayScript() {
+    return new Promise((resolve) => {
+      if (typeof window !== 'undefined' && window.Razorpay) {
+        resolve(true)
+        return
+      }
+      const script = document.createElement('script')
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+      script.async = true
+      script.onload = () => resolve(true)
+      script.onerror = () => resolve(false)
+      document.body.appendChild(script)
+    })
+  }
 
   useEffect(() => {
     loadData()
+    loadPaymentConfig()
   }, [])
+
+  async function loadPaymentConfig() {
+    try {
+      const cfg = await getPaymentConfigApi()
+      if (cfg) setPaymentConfig(cfg)
+    } catch (e) {
+      console.warn('[dashboard] payment config check:', e.message)
+    }
+  }
 
   useEffect(() => {
     if (activeTab === 'contests') loadContests()
@@ -340,6 +405,9 @@ export default function IndustryDashboard() {
     setIsEditing(false)
     setEditingId(null)
     setUrlError('')
+    setModalStep('form')
+    setPaymentError('')
+    setIsPaying(false)
 
     if (activeTab === 'internships') {
       setInternshipForm({
@@ -347,7 +415,9 @@ export default function IndustryDashboard() {
         company: user?.name || '',
         location: 'Remote',
         type: 'Remote',
-        stipend: '₹20,000 / month',
+        stipend: '₹25,000 / month',
+        monthlyStipend: 25000,
+        candidatesRequired: 4,
         duration: '3 Months',
         skills: '',
         description: '',
@@ -365,6 +435,8 @@ export default function IndustryDashboard() {
         jobUrl: '',
         companyWebsite: '',
         deadline: '',
+        monthlySalary: 30000,
+        candidatesRequired: 1,
       })
     }
     setShowModal(true)
@@ -374,14 +446,20 @@ export default function IndustryDashboard() {
     setIsEditing(true)
     setEditingId(item._id)
     setUrlError('')
+    setModalStep('form')
+    setPaymentError('')
+    setIsPaying(false)
 
     if (activeTab === 'internships') {
+      const stipendNum = item.monthlyStipend || (item.stipend ? computeFee(item.stipend, 1).monthlyStipend : 25000)
       setInternshipForm({
         title: item.title || '',
         company: item.company || '',
         location: item.location || 'Remote',
         type: item.type || 'Remote',
-        stipend: item.stipend || '',
+        stipend: item.stipend || `₹${stipendNum.toLocaleString('en-IN')} / month`,
+        monthlyStipend: stipendNum,
+        candidatesRequired: item.candidatesRequired || item.openings || 1,
         duration: item.duration || '3 Months',
         skills: Array.isArray(item.skills) ? item.skills.join(', ') : item.skills || '',
         description: item.description || '',
@@ -399,6 +477,8 @@ export default function IndustryDashboard() {
         jobUrl: item.jobUrl || '',
         companyWebsite: item.companyWebsite || '',
         deadline: item.deadline ? new Date(item.deadline).toISOString().split('T')[0] : '',
+        monthlySalary: item.monthlySalary || 30000,
+        candidatesRequired: item.candidatesRequired || 1,
       })
     }
     setShowModal(true)
@@ -407,6 +487,7 @@ export default function IndustryDashboard() {
   async function handleSubmit(e) {
     e.preventDefault()
     setUrlError('')
+    setPaymentError('')
 
     if (activeTab === 'internships') {
       if (!internshipForm.title.trim() || !internshipForm.description.trim() || !internshipForm.location.trim()) {
@@ -422,35 +503,49 @@ export default function IndustryDashboard() {
         return
       }
 
-      setIsSubmitting(true)
-      try {
-        const payload = {
-          title: internshipForm.title.trim(),
-          company: (internshipForm.company || user?.name || 'Company').trim(),
-          location: internshipForm.location.trim(),
-          type: internshipForm.type,
-          stipend: internshipForm.stipend.trim(),
-          duration: internshipForm.duration.trim(),
-          skills: internshipForm.skills.split(',').map((s) => s.trim()).filter(Boolean),
-          description: internshipForm.description.trim(),
-          applicationUrl: internshipForm.applicationUrl.trim(),
-        }
+      const stipendVal = Number(internshipForm.monthlyStipend)
+      if (isNaN(stipendVal) || stipendVal <= 0) {
+        setUrlError('Monthly stipend must be greater than ₹0.')
+        return
+      }
 
-        if (isEditing) {
+      const candVal = Number(internshipForm.candidatesRequired)
+      if (isNaN(candVal) || candVal < 1 || !Number.isInteger(candVal)) {
+        setUrlError('Number of Candidates Required must be an integer of at least 1.')
+        return
+      }
+
+      if (isEditing) {
+        // Direct update for existing posting (preserves edit without re-payment)
+        setIsSubmitting(true)
+        try {
+          const payload = {
+            title: internshipForm.title.trim(),
+            company: (internshipForm.company || user?.name || 'Company').trim(),
+            location: internshipForm.location.trim(),
+            type: internshipForm.type,
+            stipend: internshipForm.stipend ? internshipForm.stipend.trim() : `₹${stipendVal.toLocaleString('en-IN')} / month`,
+            monthlyStipend: stipendVal,
+            openings: candVal,
+            candidatesRequired: candVal,
+            duration: internshipForm.duration.trim(),
+            skills: internshipForm.skills.split(',').map((s) => s.trim()).filter(Boolean),
+            description: internshipForm.description.trim(),
+            applicationUrl: internshipForm.applicationUrl.trim(),
+          }
           await updateInternshipApi(editingId, payload)
           setMessage('Internship updated successfully!')
-        } else {
-          await createInternshipApi(payload)
-          setMessage('Internship opening published!')
+          setShowModal(false)
+          loadData()
+          setTimeout(() => setMessage(''), 3500)
+        } catch (err) {
+          setUrlError(err.message || 'Failed to update internship')
+        } finally {
+          setIsSubmitting(false)
         }
-
-        setShowModal(false)
-        loadData()
-        setTimeout(() => setMessage(''), 3500)
-      } catch (err) {
-        setUrlError(err.message || 'Failed to save internship')
-      } finally {
-        setIsSubmitting(false)
+      } else {
+        // Advance to Review & Payment Step
+        setModalStep('review')
       }
     } else {
       // Job Link
@@ -471,37 +566,175 @@ export default function IndustryDashboard() {
         return
       }
 
-      setIsSubmitting(true)
-      try {
-        const payload = {
-          title: jobLinkForm.title.trim(),
-          company: jobLinkForm.company.trim(),
-          location: (jobLinkForm.location || 'Remote').trim(),
-          workMode: jobLinkForm.workMode,
-          jobType: jobLinkForm.jobType,
-          skills: jobLinkForm.skills.split(',').map((s) => s.trim()).filter(Boolean),
-          description: jobLinkForm.description.trim(),
-          jobUrl: jobLinkForm.jobUrl.trim(),
-          companyWebsite: jobLinkForm.companyWebsite.trim(),
-          deadline: jobLinkForm.deadline || undefined,
-        }
+      const salaryVal = Number(jobLinkForm.monthlySalary)
+      if (isNaN(salaryVal) || salaryVal <= 0) {
+        setUrlError('Monthly salary must be greater than ₹0.')
+        return
+      }
 
-        if (isEditing) {
+      const candVal = Number(jobLinkForm.candidatesRequired)
+      if (isNaN(candVal) || candVal < 1 || !Number.isInteger(candVal)) {
+        setUrlError('Number of Candidates Required must be an integer of at least 1.')
+        return
+      }
+
+      if (isEditing) {
+        setIsSubmitting(true)
+        try {
+          const payload = {
+            title: jobLinkForm.title.trim(),
+            company: jobLinkForm.company.trim(),
+            location: (jobLinkForm.location || 'Remote').trim(),
+            workMode: jobLinkForm.workMode,
+            jobType: jobLinkForm.jobType,
+            monthlySalary: salaryVal,
+            candidatesRequired: candVal,
+            skills: jobLinkForm.skills.split(',').map((s) => s.trim()).filter(Boolean),
+            description: jobLinkForm.description.trim(),
+            jobUrl: jobLinkForm.jobUrl.trim(),
+            companyWebsite: jobLinkForm.companyWebsite.trim(),
+            deadline: jobLinkForm.deadline || undefined,
+          }
           await updateJobLinkApi(editingId, payload)
           setMessage('Job link updated successfully!')
-        } else {
-          await createJobLinkApi(payload)
-          setMessage('Job opportunity link added successfully!')
+          setShowModal(false)
+          loadData()
+          setTimeout(() => setMessage(''), 3500)
+        } catch (err) {
+          setUrlError(err.message || 'Failed to update job link')
+        } finally {
+          setIsSubmitting(false)
         }
-
-        setShowModal(false)
-        loadData()
-        setTimeout(() => setMessage(''), 3500)
-      } catch (err) {
-        setUrlError(err.message || 'Failed to save job link')
-      } finally {
-        setIsSubmitting(false)
+      } else {
+        // Advance to Review & Payment Step
+        setModalStep('review')
       }
+    }
+  }
+
+  async function handleExecutePayment() {
+    setPaymentError('')
+    setIsPaying(true)
+
+    try {
+      const isInternship = activeTab === 'internships'
+      const monthlyCompensation = isInternship
+        ? Number(internshipForm.monthlyStipend)
+        : Number(jobLinkForm.monthlySalary)
+      const candidatesCount = isInternship
+        ? Number(internshipForm.candidatesRequired)
+        : Number(jobLinkForm.candidatesRequired)
+      const title = isInternship ? internshipForm.title : jobLinkForm.title
+
+      // 1. Create order on backend (strictly calculates 1% platform fee)
+      const orderRes = await createPostingOrderApi({
+        postingType: isInternship ? 'internship' : 'job',
+        postingTitle: title,
+        monthlyStipend: monthlyCompensation,
+        candidatesRequired: candidatesCount,
+      })
+
+      if (!orderRes?.order?.orderId) {
+        throw new Error(orderRes?.error || 'Failed to create payment order. Please try again.')
+      }
+
+      const { orderId, amount, currency, keyId } = orderRes.order
+
+      // Check Razorpay script
+      const scriptLoaded = await loadRazorpayScript()
+      if (!scriptLoaded || !window.Razorpay) {
+        throw new Error('Razorpay Checkout failed to load. Please check your internet connection and try again.')
+      }
+
+      // 2. Prepare posting payload for verification
+      const postingData = isInternship
+        ? {
+            title: internshipForm.title.trim(),
+            company: (internshipForm.company || user?.name || 'Company').trim(),
+            location: internshipForm.location.trim(),
+            type: internshipForm.type,
+            workMode: internshipForm.type,
+            stipend: internshipForm.stipend ? internshipForm.stipend.trim() : `₹${monthlyCompensation.toLocaleString('en-IN')} / month`,
+            monthlyStipend: monthlyCompensation,
+            candidatesRequired: candidatesCount,
+            duration: internshipForm.duration.trim(),
+            skills: internshipForm.skills.split(',').map((s) => s.trim()).filter(Boolean),
+            description: internshipForm.description.trim(),
+            applicationUrl: internshipForm.applicationUrl.trim(),
+          }
+        : {
+            title: jobLinkForm.title.trim(),
+            company: jobLinkForm.company.trim(),
+            location: (jobLinkForm.location || 'Remote').trim(),
+            workMode: jobLinkForm.workMode,
+            jobType: jobLinkForm.jobType,
+            monthlySalary: monthlyCompensation,
+            candidatesRequired: candidatesCount,
+            skills: jobLinkForm.skills.split(',').map((s) => s.trim()).filter(Boolean),
+            description: jobLinkForm.description.trim(),
+            jobUrl: jobLinkForm.jobUrl.trim(),
+            companyWebsite: jobLinkForm.companyWebsite.trim(),
+            deadline: jobLinkForm.deadline || undefined,
+          }
+
+      // 3. Open Razorpay Checkout
+      const rzp = new window.Razorpay({
+        key: keyId,
+        amount: amount * 100, // paise
+        currency: currency || 'INR',
+        name: 'InternSetu',
+        description: `Platform Fee (1% × ₹${monthlyCompensation.toLocaleString('en-IN')} × ${candidatesCount})`,
+        order_id: orderId,
+        prefill: {
+          name: user?.name || '',
+          email: user?.email || '',
+        },
+        theme: {
+          color: '#4f46e5',
+        },
+        handler: async function (response) {
+          try {
+            // 4. Verification on backend (strictly verifies HMAC-SHA256 signature and fee integrity)
+            const verifyRes = await verifyAndPublishPostingApi({
+              orderId: response.razorpay_order_id || orderId,
+              paymentId: response.razorpay_payment_id,
+              signature: response.razorpay_signature,
+              postingType: isInternship ? 'internship' : 'job',
+              postingData,
+            })
+
+            if (verifyRes?.success) {
+              setMessage(isInternship ? 'Payment verified and internship published!' : 'Payment verified and job link published!')
+              setShowModal(false)
+              setModalStep('form')
+              loadData()
+              setTimeout(() => setMessage(''), 4000)
+            } else {
+              throw new Error(verifyRes?.error || 'Payment verification failed on server.')
+            }
+          } catch (verifyErr) {
+            setPaymentError(verifyErr.message || 'Payment verification failed. Posting was not published.')
+          } finally {
+            setIsPaying(false)
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setIsPaying(false)
+            setPaymentError('Payment was cancelled. No posting was created. Your form data is saved.')
+          },
+        },
+      })
+
+      rzp.on('payment.failed', function (resp) {
+        setIsPaying(false)
+        setPaymentError(resp.error?.description || 'Payment failed. No posting was created. Please try again.')
+      })
+
+      rzp.open()
+    } catch (err) {
+      setPaymentError(err.message || 'Payment initiation failed. Please try again.')
+      setIsPaying(false)
     }
   }
 
@@ -793,12 +1026,23 @@ export default function IndustryDashboard() {
               {internships.map((item) => (
                 <div key={item._id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4">
                   <div className="space-y-1.5 flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
                         {item.type}
                       </span>
                       <span className="text-[11px] text-slate-400">{item.location}</span>
                       <span className="text-[11px] font-semibold text-teal-700">• {item.stipend}</span>
+                      <span className="text-[11px] font-medium text-slate-600">
+                        • {item.candidatesRequired || item.openings || 1} {Number(item.candidatesRequired || item.openings || 1) === 1 ? 'candidate' : 'candidates'} required
+                      </span>
+                      {item.platformFeeAmount ? (
+                        <div className="flex items-center gap-1 text-[11px] text-slate-600">
+                          <span>• Platform Fee: <strong className="text-slate-800">₹{item.platformFeeAmount.toLocaleString('en-IN')}</strong></span>
+                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 flex items-center gap-0.5">
+                            <CheckCircle2 size={10} /> Paid
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                     <h3 className="text-sm font-bold text-slate-900">{item.title}</h3>
                     <p className="text-xs text-slate-500 line-clamp-1">{item.description}</p>
@@ -854,12 +1098,25 @@ export default function IndustryDashboard() {
             {jobLinks.map((job) => (
               <div key={job._id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4">
                 <div className="space-y-1.5 flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700">
                       {job.workMode || 'Remote'}
                     </span>
                     <span className="text-[11px] text-slate-400">{job.location}</span>
                     <span className="text-[11px] font-semibold text-slate-600">• {job.jobType || 'Full-time'}</span>
+                    {job.candidatesRequired ? (
+                      <span className="text-[11px] font-medium text-slate-600">
+                        • {job.candidatesRequired} {Number(job.candidatesRequired) === 1 ? 'candidate' : 'candidates'} required
+                      </span>
+                    ) : null}
+                    {job.platformFeeAmount ? (
+                      <div className="flex items-center gap-1 text-[11px] text-slate-600">
+                        <span>• Platform Fee: <strong className="text-slate-800">₹{job.platformFeeAmount.toLocaleString('en-IN')}</strong></span>
+                        <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 flex items-center gap-0.5">
+                          <CheckCircle2 size={10} /> Paid
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                   <h3 className="text-sm font-bold text-slate-900">{job.title}</h3>
                   <p className="text-xs text-slate-500 line-clamp-1">{job.description}</p>
@@ -920,32 +1177,141 @@ export default function IndustryDashboard() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 className="text-base font-bold text-slate-900">
-                {activeTab === 'internships'
-                  ? isEditing
-                    ? 'Edit Internship Opening'
-                    : 'Post Internship Opening'
-                  : isEditing
-                  ? 'Edit Job Opportunity Link'
-                  : 'Add Job Link'}
-              </h2>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  {modalStep === 'review'
+                    ? 'Payment Summary'
+                    : activeTab === 'internships'
+                    ? isEditing
+                      ? 'Edit Internship Opening'
+                      : 'Post Internship Opening'
+                    : isEditing
+                    ? 'Edit Job Opportunity Link'
+                    : 'Add Job Link'}
+                </h2>
+                {modalStep === 'review' && (
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Review InternSetu platform fee breakdown and complete payment to publish.
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false)
+                  setModalStep('form')
+                  setPaymentError('')
+                }}
                 className="text-slate-400 hover:text-slate-600"
               >
                 <X size={18} />
               </button>
             </div>
 
-            {urlError && (
+            {urlError && modalStep === 'form' && (
               <div className="mt-3 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-medium text-rose-700">
                 <AlertCircle size={15} className="shrink-0 text-rose-500" />
                 <span>{urlError}</span>
               </div>
             )}
 
-            {activeTab === 'internships' ? (
+            {modalStep === 'review' ? (
+              /* Payment Summary Step */
+              <div className="mt-4 space-y-4">
+                {(() => {
+                  const isInternship = activeTab === 'internships'
+                  const feeInfo = isInternship
+                    ? computeFee(internshipForm.monthlyStipend, internshipForm.candidatesRequired)
+                    : computeFee(jobLinkForm.monthlySalary, jobLinkForm.candidatesRequired)
+                  const itemTitle = isInternship ? internshipForm.title : jobLinkForm.title
+
+                  return (
+                    <>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-4 space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                          <span className="text-xs font-medium text-slate-500">Opportunity Title</span>
+                          <span className="text-xs font-bold text-slate-900 max-w-[240px] truncate text-right">{itemTitle}</span>
+                        </div>
+                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                          <span className="text-xs font-medium text-slate-500">{isInternship ? 'Monthly Stipend' : 'Monthly Salary'}</span>
+                          <span className="text-xs font-semibold text-slate-900">
+                            ₹{feeInfo.monthlyStipend.toLocaleString('en-IN')} / month
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                          <span className="text-xs font-medium text-slate-500">Candidates Required</span>
+                          <span className="text-xs font-bold text-slate-900">{feeInfo.candidatesRequired}</span>
+                        </div>
+                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                          <span className="text-xs font-medium text-slate-500">Platform Fee</span>
+                          <span className="text-xs font-bold text-teal-700">1%</span>
+                        </div>
+                        <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                          <span className="text-xs font-medium text-slate-500">Calculation</span>
+                          <span className="text-xs font-mono font-medium text-slate-700">
+                            ₹{feeInfo.monthlyStipend.toLocaleString('en-IN')} × {feeInfo.candidatesRequired} × 1%
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-sm font-bold text-slate-900">Amount Payable</span>
+                          <span className="text-lg font-black text-indigo-700">
+                            ₹{feeInfo.platformFee.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Razorpay / Configuration Status */}
+                      {paymentConfig.isConfigured ? (
+                        <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200 p-2.5 text-xs text-blue-800">
+                          <ShieldCheck size={16} className="text-blue-600 shrink-0" />
+                          <span>Secure online checkout powered by Razorpay.</span>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                            <AlertCircle size={15} className="text-amber-600 shrink-0" />
+                            <span>DEVELOPMENT CONFIGURATION NOTICE</span>
+                          </div>
+                          <p className="text-[11px] leading-relaxed text-amber-800">
+                            Razorpay API keys (<code>RAZORPAY_KEY_ID</code> and <code>RAZORPAY_KEY_SECRET</code>) are not configured in <code>backend/.env</code>. Real payment processing cannot proceed until keys are provided.
+                          </p>
+                        </div>
+                      )}
+
+                      {paymentError && (
+                        <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                          <AlertCircle size={15} className="shrink-0 text-rose-500 mt-0.5" />
+                          <span className="leading-relaxed">{paymentError}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalStep('form')
+                            setPaymentError('')
+                          }}
+                          disabled={isPaying}
+                          className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          ← Back to Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleExecutePayment}
+                          disabled={isPaying}
+                          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow hover:bg-indigo-500 disabled:opacity-50"
+                        >
+                          <CreditCard size={14} />
+                          <span>{isPaying ? 'Processing…' : `Pay ₹${feeInfo.platformFee.toLocaleString('en-IN')}`}</span>
+                        </button>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+            ) : activeTab === 'internships' ? (
               /* Internship Form */
               <form onSubmit={handleSubmit} className="mt-4 space-y-3">
                 <div>
@@ -1005,22 +1371,77 @@ export default function IndustryDashboard() {
                       type="text"
                       value={internshipForm.duration}
                       onChange={(e) => setInternshipForm({ ...internshipForm, duration: e.target.value })}
-                      placeholder="e.g. 2 Months"
+                      placeholder="e.g. 3 Months"
                       className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500"
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-medium text-slate-700">Stipend</label>
-                  <input
-                    type="text"
-                    value={internshipForm.stipend}
-                    onChange={(e) => setInternshipForm({ ...internshipForm, stipend: e.target.value })}
-                    placeholder="e.g. ₹15,000/month"
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500"
-                  />
+                {/* Monthly Stipend and Number of Candidates Required */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-slate-700">Monthly Stipend (₹/month) *</label>
+                    <div className="relative mt-1">
+                      <span className="absolute left-3 top-2 text-xs font-semibold text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={internshipForm.monthlyStipend || ''}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setInternshipForm({
+                            ...internshipForm,
+                            monthlyStipend: val,
+                            stipend: val ? `₹${Number(val).toLocaleString('en-IN')} / month` : '',
+                          })
+                        }}
+                        placeholder="25000"
+                        className="w-full rounded-xl border border-slate-200 pl-7 pr-3 py-2 text-xs outline-none focus:border-indigo-500 font-medium"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-700">Number of Candidates Required *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      required
+                      value={internshipForm.candidatesRequired || ''}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '')
+                        setInternshipForm({
+                          ...internshipForm,
+                          candidatesRequired: val ? Math.max(1, parseInt(val, 10)) : '',
+                        })
+                      }}
+                      placeholder="4"
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500 font-medium"
+                    />
+                  </div>
                 </div>
+
+                {/* Dynamic Platform Fee Calculation Box */}
+                {(() => {
+                  const currentFee = computeFee(internshipForm.monthlyStipend, internshipForm.candidatesRequired)
+                  return (
+                    <div className="rounded-xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/90 to-teal-50/70 p-3 text-xs">
+                      <div className="flex items-center justify-between text-slate-700 font-medium">
+                        <span>InternSetu Platform Fee</span>
+                        <span className="text-[11px] text-slate-500">1% of monthly stipend × candidates required</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between border-t border-emerald-200/60 pt-1.5">
+                        <span className="text-slate-600 font-mono text-[11px]">{currentFee.formula}</span>
+                        <span className="font-bold text-slate-900 text-sm">₹{currentFee.platformFee.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between font-bold text-emerald-800 text-xs">
+                        <span>Total Payment Required</span>
+                        <span className="text-base text-emerald-900 font-extrabold">₹{currentFee.platformFee.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 <div>
                   <label className="text-xs font-medium text-slate-700">
@@ -1075,7 +1496,11 @@ export default function IndustryDashboard() {
                     disabled={isSubmitting}
                     className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
                   >
-                    {isSubmitting ? 'Saving…' : isEditing ? 'Update Internship' : 'Publish Internship'}
+                    {isSubmitting
+                      ? 'Saving…'
+                      : isEditing
+                      ? 'Update Internship'
+                      : `Review & Pay ₹${computeFee(internshipForm.monthlyStipend, internshipForm.candidatesRequired).platformFee.toLocaleString('en-IN')}`}
                   </button>
                 </div>
               </form>
@@ -1142,6 +1567,65 @@ export default function IndustryDashboard() {
                     />
                   </div>
                 </div>
+
+                {/* Monthly Salary & Candidates Required */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-slate-700">Monthly Compensation (₹/month) *</label>
+                    <div className="relative mt-1">
+                      <span className="absolute left-3 top-2 text-xs font-semibold text-slate-400">₹</span>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={jobLinkForm.monthlySalary || ''}
+                        onChange={(e) => setJobLinkForm({ ...jobLinkForm, monthlySalary: e.target.value })}
+                        placeholder="30000"
+                        className="w-full rounded-xl border border-slate-200 pl-7 pr-3 py-2 text-xs outline-none focus:border-indigo-500 font-medium"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-700">Number of Candidates Required *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      required
+                      value={jobLinkForm.candidatesRequired || ''}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '')
+                        setJobLinkForm({
+                          ...jobLinkForm,
+                          candidatesRequired: val ? Math.max(1, parseInt(val, 10)) : '',
+                        })
+                      }}
+                      placeholder="1"
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* Dynamic Platform Fee Calculation Box for Job */}
+                {(() => {
+                  const currentJobFee = computeFee(jobLinkForm.monthlySalary, jobLinkForm.candidatesRequired)
+                  return (
+                    <div className="rounded-xl border border-purple-200/90 bg-gradient-to-br from-purple-50/90 to-indigo-50/70 p-3 text-xs">
+                      <div className="flex items-center justify-between text-slate-700 font-medium">
+                        <span>InternSetu Platform Fee</span>
+                        <span className="text-[11px] text-slate-500">1% of monthly salary × candidates required</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between border-t border-purple-200/60 pt-1.5">
+                        <span className="text-slate-600 font-mono text-[11px]">{currentJobFee.formula}</span>
+                        <span className="font-bold text-slate-900 text-sm">₹{currentJobFee.platformFee.toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between font-bold text-purple-800 text-xs">
+                        <span>Total Payment Required</span>
+                        <span className="text-base text-purple-900 font-extrabold">₹{currentJobFee.platformFee.toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 <div>
                   <label className="text-xs font-medium text-slate-700">Required Skills</label>
@@ -1217,7 +1701,11 @@ export default function IndustryDashboard() {
                     disabled={isSubmitting}
                     className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
                   >
-                    {isSubmitting ? 'Saving…' : isEditing ? 'Update Job Link' : 'Save Job Link'}
+                    {isSubmitting
+                      ? 'Saving…'
+                      : isEditing
+                      ? 'Update Job Link'
+                      : `Review & Pay ₹${computeFee(jobLinkForm.monthlySalary, jobLinkForm.candidatesRequired).platformFee.toLocaleString('en-IN')}`}
                   </button>
                 </div>
               </form>

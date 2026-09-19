@@ -63,6 +63,44 @@ const jobLinkSchema = new Schema(
     deadline: {
       type: Date,
     },
+    candidatesRequired: {
+      type: Number,
+      default: 1,
+      min: [1, 'Number of candidates required must be at least 1'],
+    },
+    monthlySalary: {
+      type: Number,
+      min: [0, 'Monthly salary cannot be negative'],
+    },
+    platformFeePercentage: {
+      type: Number,
+      default: 1,
+    },
+    platformFeeAmount: {
+      type: Number,
+      default: 0,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'paid', 'failed'],
+      default: 'pending',
+      index: true,
+    },
+    paymentOrderId: {
+      type: String,
+      trim: true,
+    },
+    paymentTransactionId: {
+      type: String,
+      trim: true,
+    },
+    paymentVerifiedAt: {
+      type: Date,
+    },
+    isTestPayment: {
+      type: Boolean,
+      default: false,
+    },
     isActive: {
       type: Boolean,
       default: true,

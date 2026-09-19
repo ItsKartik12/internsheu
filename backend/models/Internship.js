@@ -83,6 +83,45 @@ const internshipSchema = new Schema(
       type: Number,
       default: 1,
     },
+    candidatesRequired: {
+      type: Number,
+      required: true,
+      default: 1,
+      min: [1, 'Number of candidates required must be at least 1'],
+    },
+    monthlyStipend: {
+      type: Number,
+      min: [0, 'Monthly stipend cannot be negative'],
+    },
+    platformFeePercentage: {
+      type: Number,
+      default: 1,
+    },
+    platformFeeAmount: {
+      type: Number,
+      default: 0,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'paid', 'failed'],
+      default: 'pending',
+      index: true,
+    },
+    paymentOrderId: {
+      type: String,
+      trim: true,
+    },
+    paymentTransactionId: {
+      type: String,
+      trim: true,
+    },
+    paymentVerifiedAt: {
+      type: Date,
+    },
+    isTestPayment: {
+      type: Boolean,
+      default: false,
+    },
     applicantsCount: {
       type: Number,
       default: 0,
