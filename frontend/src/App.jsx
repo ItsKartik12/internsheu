@@ -4,10 +4,13 @@ import { LogOut, ShieldCheck, BookOpen, Building2, Briefcase } from 'lucide-reac
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import AiChatbot from './components/AiChatbot'
-import ErrorBoundary from './components/ErrorBoundary'
-import PageLoader from './components/PageLoader'
-
-// Eagerly loaded public and SEO critical components
+import StudentDashboard from './components/StudentDashboard'
+import SkillGapAnalysis from './components/SkillGapAnalysis'
+import OpportunityFeed from './components/OpportunityFeed'
+import VideoInterview from './components/VideoInterview'
+import LearningModules from './components/LearningModules'
+import AdminDashboard from './components/AdminDashboard'
+import ComingSoon from './components/ComingSoon'
 import Login from './components/Login'
 import CoursesPage from './components/CoursesPage'
 import InternshipsPage from './components/InternshipsPage'
@@ -120,6 +123,7 @@ function StudentLayout() {
         </main>
       </div>
       <AiChatbot />
+      <PreviousInterviews />
     </div>
   )
 }
@@ -146,8 +150,7 @@ function EducatorLayout() {
               to="/educator"
               end
               className={({ isActive }) =>
-                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
+                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
                 }`
               }
             >
@@ -156,8 +159,7 @@ function EducatorLayout() {
             <NavLink
               to="/courses"
               className={({ isActive }) =>
-                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
+                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
                 }`
               }
             >
@@ -206,8 +208,7 @@ function IndustryLayout() {
               to="/industry"
               end
               className={({ isActive }) =>
-                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
+                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
                 }`
               }
             >
@@ -216,8 +217,7 @@ function IndustryLayout() {
             <NavLink
               to="/internships"
               className={({ isActive }) =>
-                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
+                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
                 }`
               }
             >
@@ -226,8 +226,7 @@ function IndustryLayout() {
             <NavLink
               to="/jobs"
               className={({ isActive }) =>
-                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                  isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
+                `rounded-lg px-3 py-1.5 text-xs font-semibold transition ${isActive ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
                 }`
               }
             >

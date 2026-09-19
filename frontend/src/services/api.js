@@ -688,6 +688,50 @@ export async function deleteVideoApi(id) {
   })
 }
 
+// ── AI Interview APIs ──
+export async function getRecommendedInterviewSkills(role) {
+  const qs = role ? `?role=${encodeURIComponent(role)}` : ''
+  return safeRequest(`/api/interview/skills${qs}`, {}, { recommendedSkills: [] })
+}
+
+export async function createInterviewApi(payload) {
+  return request('/api/interview/create', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function getDeepgramTokenApi() {
+  return request('/api/interview/deepgram-token', { method: 'POST' })
+}
+
+export async function startInterviewApi(sessionId) {
+  return request(`/api/interview/${sessionId}/start`, { method: 'POST' })
+}
+
+export async function respondInterviewApi(sessionId, answer) {
+  return request(`/api/interview/${sessionId}/respond`, {
+    method: 'POST',
+    body: JSON.stringify({ answer }),
+  })
+}
+
+export async function finishInterviewApi(sessionId) {
+  return request(`/api/interview/${sessionId}/finish`, { method: 'POST' })
+}
+
+export async function fetchMyInterviews() {
+  return safeRequest('/api/interview/mine', {}, { interviews: [] })
+}
+
+export async function fetchInterviewById(sessionId) {
+  return request(`/api/interview/${sessionId}`)
+}
+
+export async function fetchMyInterviewSkillResults() {
+  return safeRequest('/api/interview/results/me', {}, { skills: [], interviewsCompleted: 0 })
+}
+
 // ── Admin Dashboard Statistics ──
 export async function fetchAdminStats() {
   return safeRequest('/api/admin/stats', {}, {

@@ -9,8 +9,9 @@ import {
   BookOpen,
   Briefcase,
   Layers,
+  MessageSquareText,
 } from 'lucide-react'
-import { fetchMySkillResults, fetchMyAssessmentAttempts } from '../services/api'
+import { fetchMySkillResults, fetchMyAssessmentAttempts, fetchMyInterviewSkillResults } from '../services/api'
 import { useNavigate } from 'react-router-dom'
 
 function levelBadgeColor(level) {
@@ -32,6 +33,8 @@ export default function SkillResultsPage() {
   const navigate = useNavigate()
   const [skillResult, setSkillResult] = useState(null)
   const [attempts, setAttempts] = useState([])
+  const [interviewSkills, setInterviewSkills] = useState([])
+  const [interviewsCompleted, setInterviewsCompleted] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -40,12 +43,15 @@ export default function SkillResultsPage() {
 
   async function loadResults() {
     setLoading(true)
-    const [skillsRes, attemptsRes] = await Promise.all([
+    const [skillsRes, attemptsRes, interviewRes] = await Promise.all([
       fetchMySkillResults(),
       fetchMyAssessmentAttempts(),
+      fetchMyInterviewSkillResults(),
     ])
     setSkillResult(skillsRes?.result || null)
     setAttempts(attemptsRes?.attempts || [])
+    setInterviewSkills(interviewRes?.skills || [])
+    setInterviewsCompleted(interviewRes?.interviewsCompleted || 0)
     setLoading(false)
   }
 
@@ -204,6 +210,86 @@ export default function SkillResultsPage() {
                     className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-semibold"
                   >
                     Bridge Skill Gap
+                    <ArrowRight size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Interview Assessed Skill Breakdown — separate from traditional assessments.
+          Uses ONLY AI interview data; scores never mix into SkillResult. */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Interview Assessed Skill Breakdown</h2>
+            <p className="text-xs text-slate-500">
+              Average AI interview performance per skill — from {interviewsCompleted} completed interview{interviewsCompleted === 1 ? '' : 's'}. Only skills actually tested are scored.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/interview')}
+            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-teal-500"
+          >
+            <Sparkles size={13} />
+            Take an Interview
+          </button>
+        </div>
+
+        {interviewSkills.length === 0 ? (
+          <div className="py-10 text-center">
+            <MessageSquareText size={36} className="mx-auto text-slate-300" />
+            <p className="mt-2 text-sm font-semibold text-slate-800">No interview skills recorded yet</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Complete an AI Mock Interview to see interview-based skill scores here.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {interviewSkills.map((skill) => (
+              <div
+                key={skill.skill}
+                className="flex flex-col justify-between rounded-xl border border-teal-100 bg-teal-50/30 p-5 transition-all hover:bg-white hover:shadow-sm"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="rounded bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-700">
+                      Interview
+                    </span>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${levelBadgeColor(skill.level)}`}
+                    >
+                      {skill.level}
+                    </span>
+                  </div>
+
+                  <h3 className="mt-3 text-sm font-bold text-slate-900">{skill.skill}</h3>
+
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between text-xs font-semibold">
+                      <span className="text-slate-500">Avg interview score</span>
+                      <span className="text-slate-900">{skill.averageScore}%</span>
+                    </div>
+                    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className="h-full bg-teal-600 rounded-full"
+                        style={{ width: `${skill.averageScore}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 border-t border-slate-200/60 pt-3 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>from {skill.interviewsCount} interview{skill.interviewsCount === 1 ? '' : 's'}</span>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/interview')}
+                    className="flex items-center gap-1 font-semibold text-teal-700 hover:text-teal-900"
+                  >
+                    Practice Again
                     <ArrowRight size={12} />
                   </button>
                 </div>
