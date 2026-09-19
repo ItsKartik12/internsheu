@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, History, Loader2 } from 'lucide-react'
-import { fetchMyInterviews, fetchInterviewById } from '../services/api'
+import { fetchMyInterviews } from '../services/api'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { setPendingInterview } from './interview/pendingInterview'
 
 // Compact "Previous Interviews" panel — fixed bottom-right, stacked ABOVE
 // the existing AI Career Mentor chatbot (which occupies bottom-6 right-6 and
@@ -8,6 +10,8 @@ import { fetchMyInterviews, fetchInterviewById } from '../services/api'
 // page via a custom window event (VideoInterview.jsx listens for it).
 
 export default function PreviousInterviews() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const [open, setOpen] = useState(false)
   const [interviews, setInterviews] = useState([])
   const [loading, setLoading] = useState(false)
@@ -31,6 +35,13 @@ export default function PreviousInterviews() {
   }, [open])
 
   function handleOpenInterview(sessionId) {
+    // If we're already on /interview the custom event below opens the detail
+    // in-place. Otherwise stash the id and navigate — VideoInterview consumes
+    // it on mount so the correct user's interview opens on any student page.
+    if (location.pathname !== '/interview') {
+      setPendingInterview(sessionId)
+      navigate('/interview')
+    }
     window.dispatchEvent(new CustomEvent('internsetu:open-interview', { detail: { sessionId } }))
     window.dispatchEvent(new CustomEvent('internsetu:navigate-interview'))
     setOpen(false)

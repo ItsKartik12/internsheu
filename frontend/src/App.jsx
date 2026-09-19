@@ -4,13 +4,11 @@ import { LogOut, ShieldCheck, BookOpen, Building2, Briefcase } from 'lucide-reac
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import AiChatbot from './components/AiChatbot'
-import StudentDashboard from './components/StudentDashboard'
-import SkillGapAnalysis from './components/SkillGapAnalysis'
-import OpportunityFeed from './components/OpportunityFeed'
-import VideoInterview from './components/VideoInterview'
-import LearningModules from './components/LearningModules'
-import AdminDashboard from './components/AdminDashboard'
-import ComingSoon from './components/ComingSoon'
+import PreviousInterviews from './components/PreviousInterviews'
+import ErrorBoundary from './components/ErrorBoundary'
+import PageLoader from './components/PageLoader'
+
+// Eagerly loaded public and SEO critical components
 import Login from './components/Login'
 import CoursesPage from './components/CoursesPage'
 import InternshipsPage from './components/InternshipsPage'

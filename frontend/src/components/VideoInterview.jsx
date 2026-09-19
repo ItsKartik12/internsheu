@@ -3,6 +3,7 @@ import InterviewSetup from './interview/InterviewSetup'
 import LiveInterview from './interview/LiveInterview'
 import InterviewResult from './interview/InterviewResult'
 import { createInterviewApi, fetchInterviewById, finishInterviewApi } from '../services/api'
+import { consumePendingInterview } from './interview/pendingInterview'
 
 // Phase router for the AI Mock Interview page (/interview).
 // setup → live → result. Session state is recoverable: if a refresh happens
@@ -48,6 +49,26 @@ export default function VideoInterview() {
   // Expose a detail-viewer so the Previous Interviews panel can open a past
   // interview in-place without navigation. Listens for a custom event.
   const [detailInterview, setDetailInterview] = useState(null)
+
+  // Cross-page open: Previous Interviews stashes an id before navigating to
+  // /interview; consume it once on mount so the detail view shows immediately.
+  useEffect(() => {
+    const pendingId = consumePendingInterview()
+    if (!pendingId) return
+    let cancelled = false
+    async function openPending() {
+      try {
+        const data = await fetchInterviewById(pendingId)
+        if (!cancelled && data?.interview) {
+          setDetailInterview(data.interview)
+        }
+      } catch {
+        // Ownership/network errors: silently stay on the setup screen.
+      }
+    }
+    openPending()
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
