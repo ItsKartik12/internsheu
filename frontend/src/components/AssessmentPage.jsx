@@ -16,6 +16,8 @@ import {
   Cpu,
   Database,
   Terminal,
+  WifiOff,
+  RefreshCw,
 } from 'lucide-react'
 import {
   fetchAssessmentTopics,
@@ -23,6 +25,20 @@ import {
   submitAssessmentApi,
 } from '../services/api'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import {
+  getCachedTopics,
+  saveCachedTopics,
+  getCachedQuestions,
+  saveCachedQuestions,
+  getAssessmentAttempt,
+  saveAssessmentAttempt,
+  clearAssessmentAttempt,
+  addToSyncQueue,
+  saveCachedAssessmentResults,
+} from '../services/offlineDb'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
+import { subscribeSyncStatus, syncPendingOperations } from '../services/syncManager'
 
 const ICON_MAP = {
   Code,
@@ -36,8 +52,12 @@ const ICON_MAP = {
 
 export default function AssessmentPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const userId = user?._id || user?.id || 'guest_student'
+
   const [topics, setTopics] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isOffline, setIsOffline] = useState(!isOnline())
 
   // Quiz State
   const [activeSession, setActiveSession] = useState(null)
@@ -47,14 +67,65 @@ export default function AssessmentPage() {
   const [timeLeft, setTimeLeft] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [result, setResult] = useState(null)
+  const [pendingSubmission, setPendingSubmission] = useState(null)
+  const [syncNotice, setSyncNotice] = useState('')
 
   useEffect(() => {
     loadTopics()
   }, [])
 
+  // Restore in-progress quiz if user refreshed the browser while taking an assessment
+  useEffect(() => {
+    async function restoreActiveQuiz() {
+      try {
+        const activeTopicId = localStorage.getItem('active_quiz_topicId')
+        if (activeTopicId && userId) {
+          const attempt = await getAssessmentAttempt(`${userId}_${activeTopicId}`)
+          if (attempt && attempt.status === 'in_progress' && attempt.questions?.length > 0) {
+            setActiveSession({
+              topic: attempt.topic,
+              questions: attempt.questions,
+            })
+            setAnswers(attempt.answers || {})
+            setCurrentIndex(attempt.currentIndex || 0)
+            setTimeLeft(attempt.timeLeft || (attempt.topic.timeLimitMinutes || 15) * 60)
+          }
+        }
+      } catch (err) {
+        console.warn('Could not restore in-progress quiz:', err)
+      }
+    }
+    restoreActiveQuiz()
+  }, [userId])
+
+  // Listen to network status and automatic sync updates
+  useEffect(() => {
+    const unsubSync = subscribeSyncStatus((syncState) => {
+      if (syncState.syncedAssessment) {
+        setResult(syncState.syncedAssessment)
+        setPendingSubmission(null)
+        setSyncNotice('Official assessment evaluated and synced with server!')
+        setTimeout(() => setSyncNotice(''), 5000)
+      }
+    })
+
+    const unsubNet = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) {
+        syncPendingOperations(userId)
+        loadTopics()
+      }
+    })
+
+    return () => {
+      unsubSync()
+      unsubNet()
+    }
+  }, [userId])
+
   // Timer effect during active quiz
   useEffect(() => {
-    if (!activeSession || result) return
+    if (!activeSession || result || pendingSubmission) return
 
     if (timeLeft <= 0) {
       handleFinalSubmit()
@@ -62,72 +133,246 @@ export default function AssessmentPage() {
     }
 
     const timer = setInterval(() => {
-      setTimeLeft((prev) => prev - 1)
+      setTimeLeft((prev) => {
+        const nextTime = prev - 1
+        // Periodically update remaining time in IndexedDB
+        if (activeSession && nextTime % 10 === 0) {
+          saveAssessmentAttempt({
+            attemptKey: `${userId}_${activeSession.topic._id}`,
+            userId,
+            topicId: activeSession.topic._id,
+            topic: activeSession.topic,
+            questions: activeSession.questions,
+            answers,
+            currentIndex,
+            timeLeft: nextTime,
+            status: 'in_progress',
+          }).catch(() => {})
+        }
+        return nextTime
+      })
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [activeSession, timeLeft, result])
+  }, [activeSession, timeLeft, result, pendingSubmission, answers, currentIndex, userId])
 
   async function loadTopics() {
     setLoading(true)
-    const data = await fetchAssessmentTopics()
-    setTopics(data?.topics || [])
-    setLoading(false)
+    try {
+      const cached = await getCachedTopics()
+      if (cached && cached.length > 0) {
+        setTopics(cached)
+        setLoading(false)
+      }
+
+      if (isOnline()) {
+        const data = await fetchAssessmentTopics()
+        if (data?.topics) {
+          setTopics(data.topics)
+          await saveCachedTopics(data.topics)
+          // Pre-cache questions for available topics so assessment can start offline seamlessly
+          for (const top of data.topics.slice(0, 3)) {
+            try {
+              const qData = await startAssessmentApi(top._id)
+              if (qData?.questions?.length > 0) {
+                await saveCachedQuestions(top._id, qData.topic, qData.questions)
+              }
+            } catch {}
+          }
+        }
+      } else {
+        setIsOffline(true)
+      }
+    } catch (err) {
+      console.warn('Could not fetch assessment topics:', err.message)
+      const cached = await getCachedTopics()
+      if (cached && cached.length > 0) {
+        setTopics(cached)
+      }
+      setIsOffline(true)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleStartQuiz(topic) {
     try {
-      const data = await startAssessmentApi(topic._id)
-      if (!data?.questions || data.questions.length === 0) {
-        alert('No questions configured for this topic yet.')
+      // 1. Check if user already had an in-progress attempt for this topic
+      const savedAttempt = await getAssessmentAttempt(`${userId}_${topic._id}`)
+      if (savedAttempt && savedAttempt.status === 'in_progress' && savedAttempt.questions?.length > 0) {
+        setActiveSession({
+          topic: savedAttempt.topic,
+          questions: savedAttempt.questions,
+        })
+        setCurrentIndex(savedAttempt.currentIndex || 0)
+        setAnswers(savedAttempt.answers || {})
+        setTimeLeft(savedAttempt.timeLeft || (savedAttempt.topic.timeLimitMinutes || 15) * 60)
+        localStorage.setItem('active_quiz_topicId', topic._id)
+        setResult(null)
+        setPendingSubmission(null)
         return
       }
 
-      setActiveSession({
-        topic: data.topic,
-        questions: data.questions,
-      })
-      setCurrentIndex(0)
-      setAnswers({})
-      setResult(null)
-      setTimeLeft((data.topic.timeLimitMinutes || 15) * 60)
+      // 2. If online: fetch fresh questions from API and cache in IndexedDB
+      if (isOnline()) {
+        const data = await startAssessmentApi(topic._id)
+        if (!data?.questions || data.questions.length === 0) {
+          alert('No questions configured for this topic yet.')
+          return
+        }
+
+        await saveCachedQuestions(topic._id, data.topic, data.questions)
+
+        setActiveSession({
+          topic: data.topic,
+          questions: data.questions,
+        })
+        setCurrentIndex(0)
+        setAnswers({})
+        setResult(null)
+        setPendingSubmission(null)
+        const initialTime = (data.topic.timeLimitMinutes || 15) * 60
+        setTimeLeft(initialTime)
+        localStorage.setItem('active_quiz_topicId', topic._id)
+
+        await saveAssessmentAttempt({
+          attemptKey: `${userId}_${topic._id}`,
+          userId,
+          topicId: topic._id,
+          topic: data.topic,
+          questions: data.questions,
+          answers: {},
+          currentIndex: 0,
+          timeLeft: initialTime,
+          status: 'in_progress',
+        })
+        return
+      }
+
+      // 3. If offline: start assessment from cached questions in IndexedDB
+      const cachedQ = await getCachedQuestions(topic._id)
+      if (cachedQ && cachedQ.questions?.length > 0) {
+        const qTopic = cachedQ.topic || topic
+        setActiveSession({
+          topic: qTopic,
+          questions: cachedQ.questions,
+        })
+        setCurrentIndex(0)
+        setAnswers({})
+        setResult(null)
+        setPendingSubmission(null)
+        const initialTime = (qTopic.timeLimitMinutes || 15) * 60
+        setTimeLeft(initialTime)
+        localStorage.setItem('active_quiz_topicId', topic._id)
+
+        await saveAssessmentAttempt({
+          attemptKey: `${userId}_${topic._id}`,
+          userId,
+          topicId: topic._id,
+          topic: qTopic,
+          questions: cachedQ.questions,
+          answers: {},
+          currentIndex: 0,
+          timeLeft: initialTime,
+          status: 'in_progress',
+        })
+      } else {
+        alert('This assessment has not been cached on this device yet. Please connect to the internet once to download questions.')
+      }
     } catch (err) {
       alert(err.message || 'Could not start assessment')
     }
   }
 
-  function handleSelectOption(questionId, optionIndex) {
-    setAnswers((prev) => ({
-      ...prev,
+  async function handleSelectOption(questionId, optionIndex) {
+    const newAnswers = {
+      ...answers,
       [questionId]: optionIndex,
-    }))
+    }
+    setAnswers(newAnswers)
+
+    // Answers survive browser refresh: persist in IndexedDB
+    if (activeSession) {
+      await saveAssessmentAttempt({
+        attemptKey: `${userId}_${activeSession.topic._id}`,
+        userId,
+        topicId: activeSession.topic._id,
+        topic: activeSession.topic,
+        questions: activeSession.questions,
+        answers: newAnswers,
+        currentIndex,
+        timeLeft,
+        status: 'in_progress',
+      }).catch((err) => console.warn('Failed to persist draft answers:', err))
+    }
   }
 
   async function handleFinalSubmit() {
     if (isSubmitting || !activeSession) return
     setIsSubmitting(true)
 
-    try {
-      const answersPayload = activeSession.questions.map((q) => ({
-        questionId: q._id,
-        selectedAnswer: answers[q._id] !== undefined ? answers[q._id] : -1,
-      }))
+    const answersPayload = activeSession.questions.map((q) => ({
+      questionId: q._id,
+      selectedAnswer: answers[q._id] !== undefined ? answers[q._id] : -1,
+    }))
 
-      const timeTakenSeconds =
-        (activeSession.topic.timeLimitMinutes || 15) * 60 - Math.max(0, timeLeft)
+    const timeTakenSeconds =
+      (activeSession.topic.timeLimitMinutes || 15) * 60 - Math.max(0, timeLeft)
 
-      const response = await submitAssessmentApi({
-        topicId: activeSession.topic._id,
-        answers: answersPayload,
-        timeTakenSeconds,
-      })
+    const attemptKey = `${userId}_${activeSession.topic._id}`
 
-      setResult(response)
-    } catch (err) {
-      alert(err.message || 'Submission failed')
-    } finally {
-      setIsSubmitting(false)
+    if (isOnline()) {
+      try {
+        const response = await submitAssessmentApi({
+          topicId: activeSession.topic._id,
+          answers: answersPayload,
+          timeTakenSeconds,
+        })
+
+        localStorage.removeItem('active_quiz_topicId')
+        await clearAssessmentAttempt(attemptKey)
+        await saveCachedAssessmentResults(userId, {
+          latestAttempt: response,
+          topicId: activeSession.topic._id,
+          syncedAt: Date.now(),
+        })
+
+        setResult(response)
+        return
+      } catch (err) {
+        console.warn('Online submission failed, falling back to offline queue:', err.message)
+      } finally {
+        setIsSubmitting(false)
+      }
     }
+
+    // Offline submission path:
+    // 1. Mark attempt in IndexedDB as pending_sync
+    await saveAssessmentAttempt({
+      attemptKey,
+      userId,
+      topicId: activeSession.topic._id,
+      topic: activeSession.topic,
+      answersPayload,
+      timeTakenSeconds,
+      status: 'pending_sync',
+    })
+
+    // 2. Enqueue into persistent syncQueue
+    await addToSyncQueue(userId, 'SUBMIT_ASSESSMENT', {
+      topicId: activeSession.topic._id,
+      answers: answersPayload,
+      timeTakenSeconds,
+    })
+
+    localStorage.removeItem('active_quiz_topicId')
+    setIsSubmitting(false)
+    setPendingSubmission({
+      topic: activeSession.topic,
+      answersCount: Object.keys(answers).length,
+      totalQuestions: activeSession.questions.length,
+      submittedAt: Date.now(),
+    })
   }
 
   function formatTime(seconds) {
@@ -260,6 +505,90 @@ export default function AssessmentPage() {
                 <CheckCircle2 size={14} />
               </button>
             )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // If in Pending Offline Submission state
+  if (pendingSubmission && !result) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6 pb-12">
+        <div className="rounded-2xl border border-amber-200 bg-white p-8 shadow-sm text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50">
+            <Clock className="text-amber-600 animate-pulse" size={32} />
+          </div>
+
+          <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
+            <WifiOff size={12} />
+            Offline · Pending Synchronization
+          </span>
+
+          <h2 className="mt-3 text-2xl font-extrabold text-slate-900">
+            Assessment Submitted Offline
+          </h2>
+
+          <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+            Your responses for <span className="font-semibold text-slate-900">{pendingSubmission.topic?.name}</span> have been saved securely in your device storage.
+          </p>
+
+          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4 text-left text-xs space-y-2.5">
+            <div className="flex items-center justify-between text-slate-600">
+              <span>Assessment Topic:</span>
+              <span className="font-semibold text-slate-900">{pendingSubmission.topic?.name}</span>
+            </div>
+            <div className="flex items-center justify-between text-slate-600">
+              <span>Evaluation Status:</span>
+              <span className="font-semibold text-amber-700">Pending Server Verification</span>
+            </div>
+            <div className="flex items-center justify-between text-slate-600">
+              <span>Answers Recorded:</span>
+              <span className="font-semibold text-slate-900">
+                {pendingSubmission.answersCount} of {pendingSubmission.totalQuestions} questions
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-slate-600">
+              <span>Submission Time:</span>
+              <span className="text-slate-500">Saved Locally (Offline)</span>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50/70 p-3.5 text-xs text-amber-900 text-left">
+            <div className="flex items-start gap-2">
+              <AlertCircle size={15} className="shrink-0 text-amber-600 mt-0.5" />
+              <span>
+                To protect assessment integrity and verification standards, official scoring is performed only by the central server. Once internet connectivity is restored, this assessment will automatically synchronize and your certified score will be displayed.
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => syncPendingOperations(userId)}
+              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow hover:bg-indigo-500"
+            >
+              <RefreshCw size={13} />
+              Check Connection & Sync Now
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSession(null)
+                setPendingSubmission(null)
+              }}
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Back to Topics
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/assessment/results')}
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              View Skill Matrix
+            </button>
           </div>
         </div>
       </div>
@@ -410,6 +739,20 @@ export default function AssessmentPage() {
           My Verified Skills
         </button>
       </div>
+
+      {isOffline && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
+          <WifiOff size={15} className="shrink-0 text-amber-600" />
+          <span>Offline · Showing cached assessments. You can start cached quizzes and answers will be saved locally.</span>
+        </div>
+      )}
+
+      {syncNotice && (
+        <div className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-800 shadow-sm">
+          <CheckCircle2 size={18} className="text-teal-600 shrink-0" />
+          <span>{syncNotice}</span>
+        </div>
+      )}
 
       {/* Topics Grid */}
       {loading ? (

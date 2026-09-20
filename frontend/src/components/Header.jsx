@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bell, ChevronRight, LogOut, Menu } from 'lucide-react'
+import { Bell, ChevronRight, LogOut, Menu, Wifi, WifiOff } from 'lucide-react'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
 
 const routeMeta = {
   '/': { section: 'Overview', page: 'Dashboard' },
@@ -17,6 +19,26 @@ const routeMeta = {
   '/learning': { section: 'Growth', page: 'Learning Center' },
   '/applications': { section: 'Tracking', page: 'Applications' },
   '/mentorship': { section: 'Tracking', page: 'Mentorship' },
+}
+
+function NetworkDot() {
+  const [online, setOnline] = useState(() => isOnline())
+
+  useEffect(() => {
+    return subscribeNetworkStatus(setOnline)
+  }, [])
+
+  return (
+    <div
+      title={online ? 'Network: Online' : 'Network: Offline (Changes saved locally)'}
+      className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+        online ? 'border border-emerald-200 bg-emerald-50 text-emerald-700' : 'border border-rose-200 bg-rose-50 text-rose-700'
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${online ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+      <span className="hidden sm:inline">{online ? 'Online' : 'Offline'}</span>
+    </div>
+  )
 }
 
 export default function Header({ student, onLogout, onMenuClick }) {
@@ -44,6 +66,8 @@ export default function Header({ student, onLogout, onMenuClick }) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
+        <NetworkDot />
+
         <button
           type="button"
           aria-label="Notifications"

@@ -13,22 +13,59 @@ import {
   CheckCircle2,
   RefreshCw,
   Sliders,
+  WifiOff,
 } from 'lucide-react'
 import { fetchStudentIndustryMatrix } from '../services/api'
+import { useAuth } from '../context/AuthContext'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
+import { getCachedIndustryMatrix, saveCachedIndustryMatrix } from '../services/offlineDb'
 
 export default function IndustryMatrix() {
+  const { user } = useAuth()
+  const userId = user?._id || user?.id || 'guest_student'
+
   const [matrixData, setMatrixData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [isOffline, setIsOffline] = useState(!isOnline())
 
   useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) {
+        loadMatrix()
+      }
+    })
     loadMatrix()
-  }, [])
+    return unsub
+  }, [userId])
 
   async function loadMatrix() {
     setLoading(true)
-    const res = await fetchStudentIndustryMatrix()
-    setMatrixData(res?.industryMatrix || null)
-    setLoading(false)
+    try {
+      // 1. Render cached matrix immediately if available
+      const cached = await getCachedIndustryMatrix(userId)
+      if (cached) {
+        setMatrixData(cached)
+      }
+
+      // 2. Fetch fresh data if online
+      if (isOnline()) {
+        const res = await fetchStudentIndustryMatrix()
+        const data = res?.industryMatrix || null
+        setMatrixData(data)
+        if (data) {
+          await saveCachedIndustryMatrix(userId, data)
+        }
+      }
+    } catch (err) {
+      console.warn('Network error loading industry matrix, keeping cached data:', err.message)
+      const cached = await getCachedIndustryMatrix(userId)
+      if (cached) {
+        setMatrixData(cached)
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   const assessment = matrixData?.assessment || { score: 0, totalAttempts: 0, passedCount: 0, recentAttempts: [] }
@@ -40,6 +77,18 @@ export default function IndustryMatrix() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-16">
+      {/* Offline Alert Banner */}
+      {isOffline && (
+        <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
+          <div className="flex items-center gap-2">
+            <WifiOff size={16} className="text-amber-600 shrink-0" />
+            <span>
+              <strong>Offline Mode Active:</strong> Displaying cached candidate recruitment matrix. Recent offline assessment submissions will be reflected once reconnected and evaluated.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div className="flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-teal-950 p-6 text-white shadow-md sm:p-8">
         <div>

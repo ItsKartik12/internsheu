@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import { fetchProfile, updateProfileApi } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import { loadProfileWithSync, saveProfileWithSync } from '../services/profileSyncService'
+import OfflineSyncBadge from './OfflineSyncBadge'
 
 // ── Predefined Options ──
 
@@ -253,10 +255,10 @@ function Toast({ message, type, onClose }) {
     return () => clearTimeout(timer)
   }, [onClose])
 
+  const bgColor = type === 'success' ? 'bg-teal-600' : type === 'info' ? 'bg-indigo-600' : 'bg-red-600'
+
   return (
-    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-xl px-5 py-3 text-sm font-medium text-white shadow-lg transition-all ${
-      type === 'success' ? 'bg-teal-600' : 'bg-red-600'
-    }`}>
+    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-xl px-5 py-3 text-sm font-medium text-white shadow-lg transition-all ${bgColor}`}>
       {type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}
       {message}
       <button type="button" onClick={onClose} className="ml-2 rounded p-0.5 hover:bg-white/20"><X size={14} /></button>
@@ -329,6 +331,8 @@ export default function StudentProfile() {
   const userRef = useRef(user)
   userRef.current = user
 
+  const userId = user?._id || user?.id || 'default_student'
+
   const [profile, setProfile] = useState(() => getDefaultProfile(user))
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -336,16 +340,19 @@ export default function StudentProfile() {
   const [openSections, setOpenSections] = useState(new Set(['basic-info']))
   const formRef = useRef(null)
 
-  // Fetch profile once on mount - prevents reload on cursor movement
+  // Fetch profile once on mount with offline-sync priority
   useEffect(() => {
     let cancelled = false
     async function load() {
       setIsLoading(true)
       try {
-        const res = await fetchProfile()
+        const res = await loadProfileWithSync(userId)
         if (cancelled) return
         if (res?.profile) {
           setProfile(res.profile)
+          if (res.isPendingSync) {
+            setToast({ message: 'Loaded offline changes — Pending Sync', type: 'info' })
+          }
         } else {
           setProfile((prev) => prev || getDefaultProfile(userRef.current))
         }
@@ -359,7 +366,15 @@ export default function StudentProfile() {
     }
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [userId])
+
+  // Handle background sync completion from Sync Manager
+  const handleSyncComplete = (syncedProfile) => {
+    if (syncedProfile) {
+      setProfile(syncedProfile)
+      setToast({ message: 'Synced Successfully', type: 'success' })
+    }
+  }
 
   function toggleSection(id) {
     setOpenSections((prev) => {
@@ -412,11 +427,15 @@ export default function StudentProfile() {
 
     setIsSaving(true)
     try {
-      const res = await updateProfileApi(profile)
+      const res = await saveProfileWithSync(profile, userId)
       if (res?.profile) {
         setProfile(res.profile)
       }
-      setToast({ message: res?.message || 'Profile saved successfully', type: 'success' })
+      const isPending = res?.isPendingSync
+      setToast({
+        message: res?.message || (isPending ? 'Saved Offline — Pending Sync' : 'Profile saved successfully'),
+        type: isPending ? 'info' : 'success',
+      })
     } catch (err) {
       const details = err?.data?.details
       setToast({
@@ -443,10 +462,13 @@ export default function StudentProfile() {
     <div className="mx-auto max-w-6xl" ref={formRef}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-      {/* Page Header with Save button */}
+      {/* Page Header with Save button & OfflineSyncBadge */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Student Profile</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-semibold text-slate-900">Student Profile</h1>
+            <OfflineSyncBadge userId={userId} onSyncComplete={handleSyncComplete} />
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             Complete your profile to unlock personalized career recommendations
           </p>

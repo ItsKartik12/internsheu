@@ -11,9 +11,12 @@ import {
   CheckCircle2,
   X,
   GraduationCap,
+  WifiOff,
 } from 'lucide-react'
 import { fetchCourses, enrollCourseApi, createCourseApi } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import { getCachedCourses, saveCachedCourses } from '../services/offlineDb'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
 
 const CATEGORIES = ['All', 'Web Development', 'AI & Data Science', 'Cloud & DevOps', 'Core CS', 'Programming']
 const LEVELS = ['All', 'Beginner', 'Intermediate', 'Advanced']
@@ -32,6 +35,7 @@ export default function CoursesPage() {
   const [selectedCourse, setSelectedCourse] = useState(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [message, setMessage] = useState('')
+  const [isOffline, setIsOffline] = useState(!isOnline())
 
   // Create Form State
   const [newTitle, setNewTitle] = useState('')
@@ -46,15 +50,52 @@ export default function CoursesPage() {
     loadCourses()
   }, [search, selectedCategory, selectedLevel])
 
+  useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) loadCourses()
+    })
+    return () => unsub()
+  }, [])
+
   async function loadCourses() {
     setLoading(true)
-    const data = await fetchCourses({
-      search: search || undefined,
-      category: selectedCategory !== 'All' ? selectedCategory : undefined,
-      level: selectedLevel !== 'All' ? selectedLevel : undefined,
-    })
-    setCourses(data?.courses || [])
-    setLoading(false)
+    try {
+      // 1. Check IndexedDB cache first
+      const cached = await getCachedCourses()
+      if (cached && cached.length > 0) {
+        setCourses(cached)
+        setLoading(false)
+      }
+
+      // 2. If online, fetch fresh data
+      if (isOnline()) {
+        const data = await fetchCourses({
+          search: search || undefined,
+          category: selectedCategory !== 'All' ? selectedCategory : undefined,
+          level: selectedLevel !== 'All' ? selectedLevel : undefined,
+        })
+        if (data?.courses && Array.isArray(data.courses)) {
+          setCourses(data.courses)
+          setIsOffline(false)
+          // Cache default unfiltered list
+          if (!search && selectedCategory === 'All' && selectedLevel === 'All') {
+            await saveCachedCourses(data.courses)
+          }
+        }
+      } else {
+        setIsOffline(true)
+      }
+    } catch (err) {
+      console.warn('[Courses] Failed to fetch fresh courses:', err.message)
+      const cached = await getCachedCourses()
+      if (cached && cached.length > 0) {
+        setCourses(cached)
+      }
+      setIsOffline(true)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleEnroll(e, courseId) {
@@ -141,6 +182,13 @@ export default function CoursesPage() {
           </button>
         )}
       </div>
+
+      {isOffline && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
+          <WifiOff size={15} className="shrink-0 text-amber-600" />
+          <span>Offline · Showing last synced courses</span>
+        </div>
+      )}
 
       {message && (
         <div className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-800 shadow-sm">

@@ -12,6 +12,8 @@ import {
   X,
   Send,
   Users,
+  WifiOff,
+  Copy,
 } from 'lucide-react'
 import {
   fetchInternships,
@@ -22,6 +24,8 @@ import {
   fetchMyApplications,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import { getCachedInternships, saveCachedInternships } from '../services/offlineDb'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
 
 const WORK_TYPES = ['All', 'Remote', 'Hybrid', 'On-site']
 
@@ -38,6 +42,8 @@ export default function InternshipsPage() {
   const [selectedItem, setSelectedItem] = useState(null)
   const [showPostModal, setShowPostModal] = useState(false)
   const [message, setMessage] = useState('')
+  const [isOffline, setIsOffline] = useState(!isOnline())
+  const [copiedUrl, setCopiedUrl] = useState(null)
 
   // Post form state
   const [postTitle, setPostTitle] = useState('')
@@ -57,6 +63,16 @@ export default function InternshipsPage() {
   }, [search, selectedType])
 
   useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) {
+        loadInternships()
+      }
+    })
+    return () => unsub()
+  }, [])
+
+  useEffect(() => {
     if (user?.role === 'student') {
       fetchMyApplications()
         .then((res) => {
@@ -73,17 +89,52 @@ export default function InternshipsPage() {
 
   async function loadInternships() {
     setLoading(true)
-    const data = await fetchInternships({
-      search: search || undefined,
-      type: selectedType !== 'All' ? selectedType : undefined,
-    })
-    setInternships(data?.internships || [])
-    setLoading(false)
+    try {
+      // 1. Check IndexedDB cache first
+      const cached = await getCachedInternships()
+      if (cached && cached.length > 0) {
+        setInternships(cached)
+        setLoading(false)
+      }
+
+      // 2. If online, fetch fresh internships
+      if (isOnline()) {
+        const data = await fetchInternships({
+          search: search || undefined,
+          type: selectedType !== 'All' ? selectedType : undefined,
+        })
+        if (data?.internships) {
+          setInternships(data.internships)
+          setIsOffline(false)
+          // Cache the default list
+          if (!search && selectedType === 'All') {
+            await saveCachedInternships(data.internships)
+          }
+        }
+      } else {
+        setIsOffline(true)
+      }
+    } catch (err) {
+      console.warn('Could not fetch internships from backend:', err.message)
+      const cached = await getCachedInternships()
+      if (cached && cached.length > 0) {
+        setInternships(cached)
+      }
+      setIsOffline(true)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleVisitAndApply(item, e) {
     if (e) e.stopPropagation()
     if (!item?.applicationUrl) return
+
+    if (!isOnline()) {
+      setMessage('Internet connection required to open the external application site.')
+      setCopiedUrl(item.applicationUrl)
+      return
+    }
 
     if (!user) {
       navigate('/login', { state: { from: '/internships' } })
@@ -206,10 +257,34 @@ export default function InternshipsPage() {
         )}
       </div>
 
+      {isOffline && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
+          <WifiOff size={15} className="shrink-0 text-amber-600" />
+          <span>Offline · Showing last synced internships</span>
+        </div>
+      )}
+
       {message && (
-        <div className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-800 shadow-sm">
-          <CheckCircle2 size={18} className="text-teal-600" />
-          {message}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-800 shadow-sm">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={18} className="text-teal-600 shrink-0" />
+            <span>{message}</span>
+          </div>
+          {copiedUrl && (
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(copiedUrl)
+                setMessage('Application link copied to clipboard!')
+                setCopiedUrl(null)
+                setTimeout(() => setMessage(''), 3500)
+              }}
+              className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 shadow-sm shrink-0"
+            >
+              <Copy size={13} />
+              Copy Application Link
+            </button>
+          )}
         </div>
       )}
 

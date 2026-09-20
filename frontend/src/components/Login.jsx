@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   GraduationCap,
@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { loginUser, registerUser } from '../services/api'
-import { getUserByIdentifier } from '../data/mockDatabase'
+import { isOnline } from '../services/networkStatus'
 
 function resolveLandingPath(role, from) {
   if (from && from !== '/login' && from !== '/') return from
@@ -72,8 +72,14 @@ const DEMO_ACCOUNTS = [
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { login } = useAuth()
+  const { user, login } = useAuth()
   const redirectFrom = location.state?.from
+
+  useEffect(() => {
+    if (user) {
+      navigate(resolveLandingPath(user.role, redirectFrom), { replace: true })
+    }
+  }, [user, navigate, redirectFrom])
 
   const [mode, setMode] = useState('login') // 'login' | 'register'
   const [email, setEmail] = useState('student@internsheu.edu')
@@ -100,10 +106,16 @@ export default function Login() {
 
     setError('')
     setSuccessMsg('')
+
+    if (!isOnline()) {
+      setError('Internet connection required for login. Please reconnect to authenticate your account.')
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
-      // 1. Try real backend authentication
+      // Real backend authentication against MongoDB
       const result = await loginUser(email.trim(), password)
       if (result?.token && result?.user) {
         login(result)
@@ -111,39 +123,8 @@ export default function Login() {
         return
       }
     } catch (err) {
-      console.warn('Backend login attempt:', err.message)
-      // If backend responded with invalid credentials from DB:
-      if (err.status === 401 || err.status === 400) {
-        // Check if matching mock user exists as fallback for offline demo
-        const mockMatch = getUserByIdentifier(email)
-        if (mockMatch && (password === 'password123' || password === '123456')) {
-          login({ user: mockMatch })
-          navigate(resolveLandingPath(mockMatch.role, redirectFrom), { replace: true })
-          return
-        }
-        setError(err.message || 'Invalid email or password')
-        setIsSubmitting(false)
-        return
-      }
-
-      // If backend is not reachable / network error, fall back gracefully to role mapping for testing
-      const matchedDemo = DEMO_ACCOUNTS.find((a) => a.email.toLowerCase() === email.toLowerCase())
-      if (matchedDemo) {
-        const fallbackUser = {
-          _id: `demo-${matchedDemo.role}`,
-          name: matchedDemo.title + ' User',
-          email: matchedDemo.email,
-          role: matchedDemo.role,
-          enrollmentNo: matchedDemo.role === 'student' ? '2024CS001' : undefined,
-          studentId: matchedDemo.role === 'student' ? 'STU-001' : undefined,
-        }
-        const mockToken = `mock-token-${matchedDemo.role}-${Date.now()}`
-        login({ token: mockToken, user: fallbackUser })
-        navigate(resolveLandingPath(fallbackUser.role, redirectFrom), { replace: true })
-        return
-      }
-
-      setError(err.message || 'Connection to authentication service failed.')
+      console.warn('Backend login attempt failed:', err.message)
+      setError(err.message || 'Invalid email or password.')
     } finally {
       setIsSubmitting(false)
     }
@@ -159,6 +140,12 @@ export default function Login() {
 
     setError('')
     setSuccessMsg('')
+
+    if (!isOnline()) {
+      setError('Internet connection required to create a new account.')
+      return
+    }
+
     setIsSubmitting(true)
 
     try {

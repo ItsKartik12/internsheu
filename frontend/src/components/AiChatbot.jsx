@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { MessageCircle, X, Send, Sparkles } from 'lucide-react'
+import { MessageCircle, X, Send, Sparkles, WifiOff } from 'lucide-react'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
 
 const INITIAL_MESSAGES = [
   {
@@ -12,22 +13,6 @@ const INITIAL_MESSAGES = [
 // Drop your DeepSeek (or any LLM) API call in here. This function currently
 // simulates a response so the UI is fully wireable without a backend.
 async function fetchAssistantReply(conversation) {
-  // Example shape for later:
-  //
-  // const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-  //   method: 'POST',
-  //   headers: {
-  //     'Content-Type': 'application/json',
-  //     Authorization: `Bearer ${import.meta.env.VITE_DEEPSEEK_API_KEY}`,
-  //   },
-  //   body: JSON.stringify({
-  //     model: 'deepseek-chat',
-  //     messages: conversation.map(({ role, text }) => ({ role, content: text })),
-  //   }),
-  // })
-  // const data = await response.json()
-  // return data.choices[0].message.content
-
   await new Promise((resolve) => setTimeout(resolve, 700))
   return "That's a great question — once this widget is wired to the DeepSeek API, I'll give you a tailored answer based on your skill profile."
 }
@@ -37,7 +22,15 @@ export default function AiChatbot() {
   const [messages, setMessages] = useState(INITIAL_MESSAGES)
   const [draft, setDraft] = useState('')
   const [isThinking, setIsThinking] = useState(false)
+  const [isOffline, setIsOffline] = useState(!isOnline())
   const scrollRef = useRef(null)
+
+  useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+    })
+    return unsub
+  }, [])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -49,6 +42,16 @@ export default function AiChatbot() {
     e.preventDefault()
     const text = draft.trim()
     if (!text || isThinking) return
+
+    if (!isOnline()) {
+      setMessages((prev) => [
+        ...prev,
+        { id: `u-${Date.now()}`, role: 'user', text },
+        { id: `off-${Date.now()}`, role: 'assistant', text: 'I am currently offline. An active internet connection is required to talk with your AI Career Mentor.' },
+      ])
+      setDraft('')
+      return
+    }
 
     const nextMessages = [...messages, { id: `u-${Date.now()}`, role: 'user', text }]
     setMessages(nextMessages)
@@ -92,6 +95,14 @@ export default function AiChatbot() {
               <X size={16} />
             </button>
           </div>
+
+          {/* Offline Notice Banner */}
+          {isOffline && (
+            <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-800">
+              <WifiOff size={13} className="text-amber-600 shrink-0" />
+              <span>Offline · AI Career Mentor requires an active connection.</span>
+            </div>
+          )}
 
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-slate-50 px-4 py-4">

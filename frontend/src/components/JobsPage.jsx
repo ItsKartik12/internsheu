@@ -12,6 +12,7 @@ import {
   Send,
   Users,
   Award,
+  WifiOff,
 } from 'lucide-react'
 import {
   fetchJobs,
@@ -21,6 +22,8 @@ import {
   fetchMyJobApplications,
 } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import { getCachedJobs, saveCachedJobs } from '../services/offlineDb'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
 
 const EXP_LEVELS = ['All', 'Entry Level', 'Mid Level', 'Senior Level']
 const JOB_TYPES = ['All', 'Full-time', 'Part-time', 'Contract', 'Remote']
@@ -38,6 +41,7 @@ export default function JobsPage() {
   const [selectedJob, setSelectedJob] = useState(null)
   const [showPostModal, setShowPostModal] = useState(false)
   const [message, setMessage] = useState('')
+  const [isOffline, setIsOffline] = useState(!isOnline())
 
   // Post form state (Admin only)
   const [title, setTitle] = useState('')
@@ -57,6 +61,14 @@ export default function JobsPage() {
   }, [search, selectedExp, selectedType])
 
   useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) loadJobs()
+    })
+    return () => unsub()
+  }, [])
+
+  useEffect(() => {
     if (user?.role === 'student') {
       fetchMyJobApplications()
         .then((res) => {
@@ -70,6 +82,12 @@ export default function JobsPage() {
   async function handleVisitAndApplyJob(job, e) {
     if (e) e.stopPropagation()
     if (!job?.jobUrl) return
+
+    if (!isOnline()) {
+      setMessage('Internet connection required to open the external application site.')
+      setTimeout(() => setMessage(''), 4000)
+      return
+    }
 
     if (!user) {
       navigate('/login', { state: { from: '/jobs' } })
@@ -93,13 +111,42 @@ export default function JobsPage() {
 
   async function loadJobs() {
     setLoading(true)
-    const data = await fetchJobs({
-      search: search || undefined,
-      experienceLevel: selectedExp !== 'All' ? selectedExp : undefined,
-      type: selectedType !== 'All' ? selectedType : undefined,
-    })
-    setJobs(data?.jobs || [])
-    setLoading(false)
+    try {
+      // 1. Check IndexedDB cache first
+      const cached = await getCachedJobs()
+      if (cached && cached.length > 0) {
+        setJobs(cached)
+        setLoading(false)
+      }
+
+      // 2. Fetch fresh jobs if online
+      if (isOnline()) {
+        const data = await fetchJobs({
+          search: search || undefined,
+          experienceLevel: selectedExp !== 'All' ? selectedExp : undefined,
+          type: selectedType !== 'All' ? selectedType : undefined,
+        })
+        if (data?.jobs && Array.isArray(data.jobs)) {
+          setJobs(data.jobs)
+          setIsOffline(false)
+          // Cache default unfiltered list
+          if (!search && selectedExp === 'All' && selectedType === 'All') {
+            await saveCachedJobs(data.jobs)
+          }
+        }
+      } else {
+        setIsOffline(true)
+      }
+    } catch (err) {
+      console.warn('[Jobs] Failed to fetch fresh jobs:', err.message)
+      const cached = await getCachedJobs()
+      if (cached && cached.length > 0) {
+        setJobs(cached)
+      }
+      setIsOffline(true)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleCreateJob(e) {
@@ -163,6 +210,13 @@ export default function JobsPage() {
           </button>
         )}
       </div>
+
+      {isOffline && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
+          <WifiOff size={15} className="shrink-0 text-amber-600" />
+          <span>Offline · Showing last synced career jobs</span>
+        </div>
+      )}
 
       {message && (
         <div className="flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-800 shadow-sm">

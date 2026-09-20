@@ -85,6 +85,7 @@ export async function updateProfile(req, res, next) {
     delete updateData.__v
     delete updateData.createdAt
     delete updateData.updatedAt
+    delete updateData.operationId
 
     // Server-side validation
     const errors = []

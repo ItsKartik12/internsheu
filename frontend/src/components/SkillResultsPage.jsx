@@ -10,9 +10,14 @@ import {
   Briefcase,
   Layers,
   MessageSquareText,
+  WifiOff,
 } from 'lucide-react'
 import { fetchMySkillResults, fetchMyAssessmentAttempts, fetchMyInterviewSkillResults } from '../services/api'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import { getCachedAssessmentResults, saveCachedAssessmentResults } from '../services/offlineDb'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
+import { subscribeSyncStatus } from '../services/syncManager'
 
 function levelBadgeColor(level) {
   switch (level) {
@@ -31,28 +36,100 @@ function levelBadgeColor(level) {
 
 export default function SkillResultsPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const userId = user?._id || user?.id || 'guest_student'
+
   const [skillResult, setSkillResult] = useState(null)
   const [attempts, setAttempts] = useState([])
   const [interviewSkills, setInterviewSkills] = useState([])
   const [interviewsCompleted, setInterviewsCompleted] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [isOffline, setIsOffline] = useState(!isOnline())
 
   useEffect(() => {
     loadResults()
-  }, [])
+  }, [userId])
+
+  useEffect(() => {
+    const unsubNet = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) loadResults()
+    })
+    const unsubSync = subscribeSyncStatus((syncState) => {
+      if (syncState.syncedAssessment) {
+        loadResults()
+      }
+    })
+    return () => {
+      unsubNet()
+      unsubSync()
+    }
+  }, [userId])
 
   async function loadResults() {
     setLoading(true)
-    const [skillsRes, attemptsRes, interviewRes] = await Promise.all([
-      fetchMySkillResults(),
-      fetchMyAssessmentAttempts(),
-      fetchMyInterviewSkillResults(),
-    ])
-    setSkillResult(skillsRes?.result || null)
-    setAttempts(attemptsRes?.attempts || [])
-    setInterviewSkills(interviewRes?.skills || [])
-    setInterviewsCompleted(interviewRes?.interviewsCompleted || 0)
-    setLoading(false)
+    try {
+      // 1. Check IndexedDB cache first
+      if (userId) {
+        const cached = await getCachedAssessmentResults(userId)
+        if (cached) {
+          if (cached.skillResult) setSkillResult(cached.skillResult)
+          if (cached.attempts) setAttempts(cached.attempts)
+          if (cached.interviewSkills) setInterviewSkills(cached.interviewSkills)
+          if (cached.interviewsCompleted) setInterviewsCompleted(cached.interviewsCompleted)
+          setLoading(false)
+        }
+      }
+
+      // 2. Revalidate if online
+      if (isOnline()) {
+        const interviewPromise =
+          typeof fetchMyInterviewSkillResults === 'function'
+            ? fetchMyInterviewSkillResults().catch((err) => {
+                console.warn('[SkillResultsPage] Interview results unavailable:', err?.message || err)
+                return { skills: [], interviewsCompleted: 0 }
+              })
+            : Promise.resolve({ skills: [], interviewsCompleted: 0 })
+
+        const [skillsRes, attemptsRes, interviewRes] = await Promise.all([
+          typeof fetchMySkillResults === 'function'
+            ? fetchMySkillResults().catch(() => null)
+            : Promise.resolve(null),
+          typeof fetchMyAssessmentAttempts === 'function'
+            ? fetchMyAssessmentAttempts().catch(() => ({ attempts: [] }))
+            : Promise.resolve({ attempts: [] }),
+          interviewPromise,
+        ])
+
+        const resSkillResult = skillsRes?.result || null
+        const resAttempts = attemptsRes?.attempts || []
+        const resInterviewSkills = Array.isArray(interviewRes?.skills) ? interviewRes.skills : []
+        const resInterviewsCompleted = Number(interviewRes?.interviewsCompleted) || 0
+
+        setSkillResult(resSkillResult)
+        setAttempts(resAttempts)
+        setInterviewSkills(resInterviewSkills)
+        setInterviewsCompleted(resInterviewsCompleted)
+        setIsOffline(false)
+
+        if (userId) {
+          await saveCachedAssessmentResults(userId, {
+            skillResult: resSkillResult,
+            attempts: resAttempts,
+            interviewSkills: resInterviewSkills,
+            interviewsCompleted: resInterviewsCompleted,
+            syncedAt: Date.now(),
+          })
+        }
+      } else {
+        setIsOffline(true)
+      }
+    } catch (err) {
+      console.warn('Could not fetch latest skill results:', err.message)
+      setIsOffline(true)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const skills = skillResult?.skills || []
@@ -85,6 +162,13 @@ export default function SkillResultsPage() {
           Take Another Assessment
         </button>
       </div>
+
+      {isOffline && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
+          <WifiOff size={15} className="shrink-0 text-amber-600" />
+          <span>Offline · Showing last synced skill results</span>
+        </div>
+      )}
 
       {/* Overview Metric Row */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">

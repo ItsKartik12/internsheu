@@ -4,6 +4,7 @@ import LiveInterview from './interview/LiveInterview'
 import InterviewResult from './interview/InterviewResult'
 import { createInterviewApi, fetchInterviewById, finishInterviewApi } from '../services/api'
 import { consumePendingInterview } from './interview/pendingInterview'
+import { isOnline } from '../services/networkStatus'
 
 // Phase router for the AI Mock Interview page (/interview).
 // setup → live → result. Session state is recoverable: if a refresh happens
@@ -18,6 +19,10 @@ export default function VideoInterview() {
   const [finishError, setFinishError] = useState('')
 
   const handleStart = useCallback(async (config) => {
+    if (!isOnline()) {
+      alert('Internet connection required for live AI voice interview.')
+      return
+    }
     const data = await createInterviewApi(config)
     setSession({ id: data.sessionId, role: data.role, company: data.company, level: data.level })
     setPhase('live')

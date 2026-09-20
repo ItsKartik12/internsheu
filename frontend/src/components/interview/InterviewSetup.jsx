@@ -14,8 +14,10 @@ import {
   RefreshCw,
   Sparkles,
   Target,
+  WifiOff,
 } from 'lucide-react'
 import { fetchProfile, getRecommendedInterviewSkills } from '../../services/api'
+import { isOnline, subscribeNetworkStatus } from '../../services/networkStatus'
 
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced']
 
@@ -60,6 +62,14 @@ export default function InterviewSetup({ onStart }) {
   const [skillsError, setSkillsError] = useState('')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
+  const [isOffline, setIsOffline] = useState(!isOnline())
+
+  useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+    })
+    return unsub
+  }, [])
 
   // Pre-fill from the existing InternSetu profile — the candidate never
   // re-enters information already stored.
@@ -128,6 +138,10 @@ export default function InterviewSetup({ onStart }) {
   }
 
   async function handleStart() {
+    if (!isOnline()) {
+      setError('Internet connection required for live AI voice interview.')
+      return
+    }
     // Skills are OPTIONAL: zero selected = AI decides the interview focus.
     setError('')
     setStarting(true)
@@ -146,6 +160,16 @@ export default function InterviewSetup({ onStart }) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-12">
+      {/* Offline Alert Banner */}
+      {isOffline && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
+          <WifiOff size={16} className="text-amber-600 shrink-0" />
+          <span>
+            <strong>Internet Connection Required:</strong> Live AI voice interview requires an active network connection. You can still inspect previously completed interview sessions via the <em>Previous Interviews</em> button at bottom right.
+          </span>
+        </div>
+      )}
+
       {/* Hero — compact, keeps the InternSetu gradient identity */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-900 via-slate-900 to-indigo-950 p-5 text-white shadow-md sm:p-6">
         <div className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full bg-teal-400/10 blur-2xl" />

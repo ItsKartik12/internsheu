@@ -12,17 +12,33 @@ import {
   Award,
   RefreshCw,
   Search,
+  WifiOff,
 } from 'lucide-react'
 import {
   fetchStudentIndustryAssessments,
   startStudentAssessmentApi,
   submitStudentAssessmentApi,
 } from '../services/api'
+import { useAuth } from '../context/AuthContext'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
+import {
+  getCachedIndustryAssessments,
+  saveCachedIndustryAssessments,
+  getCachedIndustryAssessmentQuestions,
+  saveCachedIndustryAssessmentQuestions,
+  getCachedIndustryAssessmentAnswers,
+  saveCachedIndustryAssessmentAnswers,
+  addToSyncQueue,
+} from '../services/offlineDb'
 
 export default function IndustryAssessment() {
+  const { user } = useAuth()
+  const userId = user?._id || user?.id || 'guest_student'
+
   const [assessments, setAssessments] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [isOffline, setIsOffline] = useState(!isOnline())
 
   // Active Assessment State
   const [activeAssessment, setActiveAssessment] = useState(null)
@@ -33,18 +49,26 @@ export default function IndustryAssessment() {
   const [timeRemaining, setTimeRemaining] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [isQueuedOffline, setIsQueuedOffline] = useState(false)
 
   // Completed Attempt Result View
   const [attemptResult, setAttemptResult] = useState(null)
   const [questionReview, setQuestionReview] = useState([])
 
   useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) {
+        loadAssessments()
+      }
+    })
     loadAssessments()
+    return unsub
   }, [])
 
   // Timer countdown hook during active assessment
   useEffect(() => {
-    if (!activeAssessment || timeRemaining <= 0 || attemptResult) return
+    if (!activeAssessment || timeRemaining <= 0 || attemptResult || isQueuedOffline) return
 
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
@@ -58,28 +82,80 @@ export default function IndustryAssessment() {
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [activeAssessment, timeRemaining, attemptResult])
+  }, [activeAssessment, timeRemaining, attemptResult, isQueuedOffline])
 
   async function loadAssessments() {
     setLoading(true)
-    const res = await fetchStudentIndustryAssessments()
-    setAssessments(res?.assessments || [])
-    setLoading(false)
+    setErrorMsg('')
+    try {
+      // 1. Immediately render cached assessments if available
+      const cached = await getCachedIndustryAssessments()
+      if (cached && cached.length > 0) {
+        setAssessments(cached)
+      }
+
+      // 2. Fetch fresh data if online
+      if (isOnline()) {
+        const res = await fetchStudentIndustryAssessments()
+        const list = res?.assessments || []
+        setAssessments(list)
+        if (list.length > 0) {
+          await saveCachedIndustryAssessments(list)
+        }
+      }
+    } catch (err) {
+      console.warn('Could not fetch online industry assessments, using cached version:', err.message)
+      const cached = await getCachedIndustryAssessments()
+      if (cached && cached.length > 0) {
+        setAssessments(cached)
+      } else {
+        setErrorMsg('Network error: Could not load industry assessments.')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleStartAssessment(assessment) {
     setErrorMsg('')
     setLoading(true)
+    setIsQueuedOffline(false)
     try {
-      const res = await startStudentAssessmentApi(assessment._id)
-      setAssessmentInfo(res.assessment)
-      setQuestions(res.questions || [])
-      setCurrentQIndex(0)
-      setUserAnswers({})
-      setTimeRemaining((res.assessment.durationMinutes || 30) * 60)
-      setActiveAssessment(assessment)
-      setAttemptResult(null)
-      setQuestionReview([])
+      if (isOnline()) {
+        try {
+          const res = await startStudentAssessmentApi(assessment._id)
+          setAssessmentInfo(res.assessment)
+          setQuestions(res.questions || [])
+          await saveCachedIndustryAssessmentQuestions(assessment._id, res.assessment, res.questions || [])
+
+          const savedAnswers = await getCachedIndustryAssessmentAnswers(assessment._id)
+          setUserAnswers(savedAnswers || {})
+          setCurrentQIndex(0)
+          setTimeRemaining((res.assessment.durationMinutes || 30) * 60)
+          setActiveAssessment(assessment)
+          setAttemptResult(null)
+          setQuestionReview([])
+          return
+        } catch (apiErr) {
+          console.warn('Online start failed, attempting cached questions:', apiErr.message)
+        }
+      }
+
+      // Offline path: load from IndexedDB
+      const cachedQ = await getCachedIndustryAssessmentQuestions(assessment._id)
+      if (cachedQ && cachedQ.questions && cachedQ.questions.length > 0) {
+        setAssessmentInfo(cachedQ.assessment || assessment)
+        setQuestions(cachedQ.questions)
+        const savedAnswers = await getCachedIndustryAssessmentAnswers(assessment._id)
+        setUserAnswers(savedAnswers || {})
+        setCurrentQIndex(0)
+        setTimeRemaining(((cachedQ.assessment?.durationMinutes || assessment.durationMinutes || 30) * 60))
+        setActiveAssessment(assessment)
+        setAttemptResult(null)
+        setQuestionReview([])
+      } else {
+        setErrorMsg('This assessment has not been cached on this device yet. Connect to the internet once to download questions.')
+      }
     } catch (err) {
       setErrorMsg(err.message || 'Failed to start assessment.')
     } finally {
@@ -88,16 +164,25 @@ export default function IndustryAssessment() {
   }
 
   function handleSelectOption(qId, optIndex) {
-    setUserAnswers((prev) => ({
-      ...prev,
-      [qId]: optIndex,
-    }))
+    setUserAnswers((prev) => {
+      const next = {
+        ...prev,
+        [qId]: optIndex,
+      }
+      if (activeAssessment?._id) {
+        saveCachedIndustryAssessmentAnswers(activeAssessment._id, next).catch(() => {})
+      }
+      return next
+    })
   }
 
   function handleClearOption(qId) {
     setUserAnswers((prev) => {
       const next = { ...prev }
       delete next[qId]
+      if (activeAssessment?._id) {
+        saveCachedIndustryAssessmentAnswers(activeAssessment._id, next).catch(() => {})
+      }
       return next
     })
   }
@@ -117,16 +202,35 @@ export default function IndustryAssessment() {
         selectedAnswer,
       }))
 
-      const timeTakenSeconds = (assessmentInfo.durationMinutes * 60) - timeRemaining
+      const timeTakenSeconds = ((assessmentInfo?.durationMinutes || 30) * 60) - Math.max(0, timeRemaining)
 
-      const res = await submitStudentAssessmentApi(activeAssessment._id, {
+      if (isOnline()) {
+        try {
+          const res = await submitStudentAssessmentApi(activeAssessment._id, {
+            answers: answersPayload,
+            timeTakenSeconds,
+          })
+
+          await saveCachedIndustryAssessmentAnswers(activeAssessment._id, {})
+          setAttemptResult(res.attempt)
+          setQuestionReview(res.questionReview || [])
+          loadAssessments() // refresh list attempt counts
+          return
+        } catch (apiErr) {
+          console.warn('Online submit failed, enqueueing offline operation:', apiErr.message)
+        }
+      }
+
+      // Offline fallback: enqueue to persistent syncQueue
+      await addToSyncQueue(userId, 'SUBMIT_INDUSTRY_ASSESSMENT', {
+        assessmentId: activeAssessment._id,
         answers: answersPayload,
         timeTakenSeconds,
       })
 
-      setAttemptResult(res.attempt)
-      setQuestionReview(res.questionReview || [])
-      loadAssessments() // refresh list attempt counts
+      // Clean cached drafts
+      await saveCachedIndustryAssessmentAnswers(activeAssessment._id, {})
+      setIsQueuedOffline(true)
     } catch (err) {
       setErrorMsg(err.message || 'Failed to submit assessment answers.')
     } finally {
@@ -450,10 +554,61 @@ export default function IndustryAssessment() {
   }
 
   // ────────────────────────────────────────────────────────
+  // OFFLINE QUEUED RESULT SCREEN
+  // ────────────────────────────────────────────────────────
+  if (isQueuedOffline) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6 pb-16">
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+            <CheckCircle2 size={36} />
+          </div>
+
+          <h2 className="mt-4 text-2xl font-extrabold text-slate-900">
+            Assessment Submission Queued Offline
+          </h2>
+          <p className="mt-2 max-w-md mx-auto text-xs text-slate-500 leading-relaxed">
+            Your assessment answers have been safely saved to your browser&apos;s offline queue. Once your internet connection is restored, your answers will automatically synchronize with the server, and your official score will be evaluated and posted to your Industry Matrix.
+          </p>
+
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-1.5 text-xs font-semibold text-amber-800">
+            <WifiOff size={14} /> Pending Automatic Sync
+          </div>
+
+          <div className="mt-8 flex justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveAssessment(null)
+                setIsQueuedOffline(false)
+              }}
+              className="rounded-xl bg-slate-900 px-6 py-2.5 text-xs font-bold text-white hover:bg-slate-800"
+            >
+              Back to Industry Assessments
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ────────────────────────────────────────────────────────
   // ASSESSMENTS LIST SCREEN
   // ────────────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-16">
+      {/* Offline Alert Banner */}
+      {isOffline && (
+        <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
+          <div className="flex items-center gap-2">
+            <WifiOff size={16} className="text-amber-600 shrink-0" />
+            <span>
+              <strong>Offline Mode Active:</strong> Showing cached company screening assessments. Previously opened assessments can be taken offline and answers will be queued for synchronization upon reconnect.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div className="flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 p-6 text-white shadow-md sm:p-8">
         <div>

@@ -6,6 +6,9 @@ import {
   GraduationCap, Loader2, AlertCircle, ExternalLink,
 } from 'lucide-react'
 import { fetchStudentDashboard, fetchProfile } from '../services/api'
+import { useAuth } from '../context/AuthContext'
+import { getCachedDashboard, saveCachedDashboard, getLocalProfile } from '../services/offlineDb'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
 
 function initialsFromCompany(name) {
   return name
@@ -92,6 +95,9 @@ function SkillChip({ name, category }) {
 }
 
 export default function StudentDashboard({ student: propStudent }) {
+  const { user } = useAuth()
+  const userId = user?._id || user?.id
+
   const [dashboardData, setDashboardData] = useState(null)
   const [profileData, setProfileData] = useState(null)
   const [completionPercentage, setCompletionPercentage] = useState(0)
@@ -103,41 +109,92 @@ export default function StudentDashboard({ student: propStudent }) {
     let cancelled = false
 
     async function load() {
-      setIsLoading(true)
       setError(null)
 
-      try {
-        // Fetch both dashboard data and profile in parallel
-        const [dashRes, profRes] = await Promise.all([
-          fetchStudentDashboard(),
-          fetchProfile(),
-        ])
-
-        if (cancelled) return
-
-        if (dashRes) {
-          setDashboardData(dashRes)
-          setIsLive(true)
+      // 1. Try reading cached data from IndexedDB first (instant render)
+      if (userId) {
+        try {
+          const cachedDash = await getCachedDashboard(userId)
+          const localProf = await getLocalProfile(userId)
+          if (!cancelled) {
+            if (cachedDash) {
+              setDashboardData(cachedDash)
+              setIsLive(false)
+            }
+            if (localProf?.profile) {
+              setProfileData(localProf.profile)
+              setCompletionPercentage(localProf.completionPercentage || 0)
+            }
+            if (cachedDash || localProf) {
+              setIsLoading(false)
+            }
+          }
+        } catch (cacheErr) {
+          console.warn('[Dashboard] IndexedDB cache read error:', cacheErr)
         }
+      }
 
-        if (profRes?.profile) {
-          setProfileData(profRes.profile)
-          setCompletionPercentage(profRes.completionPercentage ?? 0)
-        } else if (profRes && typeof profRes === 'object' && !profRes.error) {
-          setProfileData(profRes)
+      // 2. If online, fetch fresh data from backend API
+      if (isOnline()) {
+        try {
+          const [dashRes, profRes] = await Promise.all([
+            fetchStudentDashboard(),
+            fetchProfile(),
+          ])
+
+          if (cancelled) return
+
+          if (dashRes) {
+            setDashboardData(dashRes)
+            setIsLive(true)
+            if (userId) {
+              await saveCachedDashboard(userId, dashRes)
+            }
+          }
+
+          if (profRes?.profile) {
+            setProfileData(profRes.profile)
+            setCompletionPercentage(profRes.completionPercentage ?? 0)
+          } else if (profRes && typeof profRes === 'object' && !profRes.error) {
+            setProfileData(profRes)
+          }
+        } catch (err) {
+          console.warn('[Dashboard] Backend fetch failed:', err.message)
+          // Only show error if we have no cached data at all
+          if (!cancelled) {
+            const hasCache = await getCachedDashboard(userId)
+            if (!hasCache) {
+              setError('Unable to load your profile. Please check your connection and try again.')
+            }
+          }
+        } finally {
+          if (!cancelled) setIsLoading(false)
         }
-      } catch (err) {
+      } else {
+        // Offline mode
         if (!cancelled) {
-          setError('Unable to load your profile. Please try again.')
+          setIsLive(false)
+          setIsLoading(false)
         }
-      } finally {
-        if (!cancelled) setIsLoading(false)
       }
     }
 
     load()
-    return () => { cancelled = true }
-  }, [])
+
+    // Listen for network reconnection to revalidate automatically
+    const unsub = subscribeNetworkStatus((online) => {
+      if (online) {
+        load()
+      } else {
+        setIsLive(false)
+      }
+    })
+
+    return () => {
+      cancelled = true
+      unsub()
+    }
+  }, [userId])
 
   if (isLoading) {
     return (
@@ -242,6 +299,12 @@ export default function StudentDashboard({ student: propStudent }) {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      {!isLive && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800 shadow-sm">
+          <WifiOff size={16} className="shrink-0 text-amber-600" />
+          <span>Offline · Showing last synced dashboard data from device cache</span>
+        </div>
+      )}
       {/* Welcome / Profile Overview */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card">
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">

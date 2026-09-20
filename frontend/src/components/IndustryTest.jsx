@@ -14,6 +14,7 @@ import {
   Users,
   Search,
   RefreshCw,
+  WifiOff,
 } from 'lucide-react'
 import {
   fetchStudentIndustryTests,
@@ -21,12 +22,22 @@ import {
   submitContestSolutionApi,
   fetchContestStandings,
 } from '../services/api'
+import {
+  getCachedIndustryTests,
+  saveCachedIndustryTests,
+  getCachedIndustryTestDetails,
+  saveCachedIndustryTestDetails,
+  getCachedIndustryTestDraft,
+  saveCachedIndustryTestDraft,
+} from '../services/offlineDb'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
 
 export default function IndustryTest() {
   const [contests, setContests] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all') // 'all' | 'live' | 'upcoming' | 'completed'
   const [search, setSearch] = useState('')
+  const [isOffline, setIsOffline] = useState(!isOnline())
 
   // Selected Contest View
   const [activeContest, setActiveContest] = useState(null)
@@ -49,11 +60,45 @@ export default function IndustryTest() {
     loadContests()
   }, [])
 
+  useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) loadContests()
+    })
+    return () => unsub()
+  }, [])
+
   async function loadContests() {
     setLoading(true)
-    const res = await fetchStudentIndustryTests()
-    setContests(res?.contests || [])
-    setLoading(false)
+    try {
+      // 1. Check IndexedDB cache first
+      const cached = await getCachedIndustryTests()
+      if (cached && cached.length > 0) {
+        setContests(cached)
+        setLoading(false)
+      }
+
+      // 2. Fetch fresh if online
+      if (isOnline()) {
+        const res = await fetchStudentIndustryTests()
+        if (res?.contests && Array.isArray(res.contests)) {
+          setContests(res.contests)
+          setIsOffline(false)
+          await saveCachedIndustryTests(res.contests)
+        }
+      } else {
+        setIsOffline(true)
+      }
+    } catch (err) {
+      console.warn('[IndustryTest] Error loading contests:', err.message)
+      const cached = await getCachedIndustryTests()
+      if (cached && cached.length > 0) {
+        setContests(cached)
+      }
+      setIsOffline(true)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function openContest(contest) {
@@ -64,20 +109,64 @@ export default function IndustryTest() {
     setContestTab('problems')
 
     try {
-      const res = await fetchStudentContestDetails(contest._id)
-      setContestDetails(res?.contest || contest)
-      setMyResult(res?.myResult || null)
-      if (res?.contest?.problems && res.contest.problems.length > 0) {
-        setSelectedProblem(res.contest.problems[0])
+      // Check cache first
+      const cachedDetail = await getCachedIndustryTestDetails(contest._id)
+      if (cachedDetail) {
+        setContestDetails(cachedDetail.contest || contest)
+        setMyResult(cachedDetail.myResult || null)
+        if (cachedDetail.contest?.problems?.length > 0) {
+          await handleSelectProblem(cachedDetail.contest.problems[0], contest._id)
+        }
+        setLoadingDetails(false)
+      }
+
+      if (isOnline()) {
+        const res = await fetchStudentContestDetails(contest._id)
+        if (res) {
+          setContestDetails(res?.contest || contest)
+          setMyResult(res?.myResult || null)
+          await saveCachedIndustryTestDetails(contest._id, res)
+          if (res?.contest?.problems && res.contest.problems.length > 0 && !selectedProblem) {
+            await handleSelectProblem(res.contest.problems[0], contest._id)
+          }
+        }
       }
     } catch (err) {
-      console.error('Failed to load contest details:', err)
+      console.error('[IndustryTest] Failed to load contest details:', err)
+      const cachedDetail = await getCachedIndustryTestDetails(contest._id)
+      if (cachedDetail) {
+        setContestDetails(cachedDetail.contest || contest)
+        setMyResult(cachedDetail.myResult || null)
+      }
     } finally {
       setLoadingDetails(false)
     }
   }
 
+  async function handleSelectProblem(problem, contestId = activeContest?._id) {
+    setSelectedProblem(problem)
+    if (contestId && problem?._id) {
+      const draftKey = `${contestId}_${problem._id}`
+      const savedDraft = await getCachedIndustryTestDraft(draftKey)
+      if (savedDraft) {
+        setCode(savedDraft)
+        return
+      }
+    }
+    // Default template
+    handleLanguageChange(language)
+  }
+
+  async function handleCodeChange(newCode) {
+    setCode(newCode)
+    if (activeContest?._id && selectedProblem?._id) {
+      const draftKey = `${activeContest._id}_${selectedProblem._id}`
+      await saveCachedIndustryTestDraft(draftKey, newCode)
+    }
+  }
+
   async function loadStandings(contestId) {
+    if (!isOnline()) return
     const res = await fetchContestStandings(contestId)
     setStandings(res?.standings || [])
   }
@@ -91,15 +180,17 @@ export default function IndustryTest() {
 
   function handleLanguageChange(newLang) {
     setLanguage(newLang)
+    let template = ''
     if (newLang === 'Python') {
-      setCode('# Write your solution here\ndef main():\n    pass\n\nif __name__ == "__main__":\n    main()')
+      template = '# Write your solution here\ndef main():\n    pass\n\nif __name__ == "__main__":\n    main()'
     } else if (newLang === 'Java') {
-      setCode('import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        // Write your solution here\n    }\n}')
+      template = 'import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        // Write your solution here\n    }\n}'
     } else if (newLang === 'JavaScript') {
-      setCode('// Write your solution here\nfunction solve() {\n    \n}\nsolve();')
+      template = '// Write your solution here\nfunction solve() {\n    \n}\nsolve();'
     } else {
-      setCode('#include <iostream>\nusing namespace std;\n\nint main() {\n    // Write your solution here\n    return 0;\n}')
+      template = '#include <iostream>\nusing namespace std;\n\nint main() {\n    // Write your solution here\n    return 0;\n}'
     }
+    setCode(template)
   }
 
   async function handleSubmitSolution(e) {
@@ -107,6 +198,19 @@ export default function IndustryTest() {
     if (!selectedProblem || !activeContest) return
     setIsSubmitting(true)
     setSubmissionFeedback(null)
+
+    // Save draft locally first
+    const draftKey = `${activeContest._id}_${selectedProblem._id}`
+    await saveCachedIndustryTestDraft(draftKey, code)
+
+    if (!isOnline()) {
+      setSubmissionFeedback({
+        type: 'error',
+        message: 'Internet connection required to submit code to the remote judging engine. Your solution has been saved locally as a draft.',
+      })
+      setIsSubmitting(false)
+      return
+    }
 
     try {
       const res = await submitContestSolutionApi(activeContest._id, {
@@ -124,6 +228,9 @@ export default function IndustryTest() {
       // Refresh contest details to update results
       const updated = await fetchStudentContestDetails(activeContest._id)
       setMyResult(updated?.myResult || null)
+      if (updated) {
+        await saveCachedIndustryTestDetails(activeContest._id, updated)
+      }
     } catch (err) {
       setSubmissionFeedback({
         type: 'error',
@@ -258,14 +365,11 @@ export default function IndustryTest() {
                   return (
                     <div
                       key={p._id}
-                      onClick={() => {
-                        setSelectedProblem(p)
-                        setSubmissionFeedback(null)
-                      }}
-                      className={`cursor-pointer rounded-xl border p-4 transition ${
+                      onClick={() => handleSelectProblem(p)}
+                      className={`rounded-xl border p-4 transition-all cursor-pointer ${
                         isSelected
-                          ? 'border-indigo-600 bg-indigo-50/50 shadow-sm'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
+                          ? 'border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-500 shadow-sm'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -383,7 +487,7 @@ export default function IndustryTest() {
                     <textarea
                       rows={12}
                       value={code}
-                      onChange={(e) => setCode(e.target.value)}
+                      onChange={(e) => handleCodeChange(e.target.value)}
                       required
                       placeholder="Write your solution code here..."
                       className="w-full rounded-xl border border-slate-200 bg-slate-900 p-4 font-mono text-xs text-emerald-400 outline-none focus:border-indigo-500"
@@ -537,6 +641,13 @@ export default function IndustryTest() {
           </p>
         </div>
       </div>
+
+      {isOffline && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800">
+          <WifiOff size={15} className="shrink-0 text-amber-600" />
+          <span>Offline · Showing last synced coding contests</span>
+        </div>
+      )}
 
       {/* Filter and search bar */}
       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">

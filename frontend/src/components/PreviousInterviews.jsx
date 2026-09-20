@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, ChevronUp, History, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, History, Loader2, WifiOff } from 'lucide-react'
 import { fetchMyInterviews } from '../services/api'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { setPendingInterview } from './interview/pendingInterview'
+import { useAuth } from '../context/AuthContext'
+import { isOnline } from '../services/networkStatus'
+import { getCachedAiInterviews, saveCachedAiInterviews } from '../services/offlineDb'
 
 // Compact "Previous Interviews" panel — fixed bottom-right, stacked ABOVE
 // the existing AI Career Mentor chatbot (which occupies bottom-6 right-6 and
@@ -12,6 +15,9 @@ import { setPendingInterview } from './interview/pendingInterview'
 export default function PreviousInterviews() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
+  const userId = user?._id || user?.id || 'guest_student'
+
   const [open, setOpen] = useState(false)
   const [interviews, setInterviews] = useState([])
   const [loading, setLoading] = useState(false)
@@ -19,14 +25,32 @@ export default function PreviousInterviews() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await fetchMyInterviews()
-      setInterviews(data?.interviews || [])
+      // 1. Immediately render cached past interviews
+      const cached = await getCachedAiInterviews(userId)
+      if (cached && cached.length > 0) {
+        setInterviews(cached)
+      }
+
+      // 2. Fetch fresh if online
+      if (isOnline()) {
+        const data = await fetchMyInterviews()
+        const list = data?.interviews || []
+        setInterviews(list)
+        if (list.length > 0) {
+          await saveCachedAiInterviews(userId, list)
+        }
+      }
     } catch {
-      setInterviews([])
+      const cached = await getCachedAiInterviews(userId)
+      if (cached && cached.length > 0) {
+        setInterviews(cached)
+      } else {
+        setInterviews([])
+      }
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [userId])
 
   // Lazy-load: fetch only when the panel is first opened.
   useEffect(() => {

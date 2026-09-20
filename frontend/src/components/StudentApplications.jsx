@@ -12,14 +12,21 @@ import {
   ArrowUpRight,
   RefreshCw,
   Laptop,
+  WifiOff,
 } from 'lucide-react'
 import {
   fetchMyApplications,
   fetchMyJobApplications,
   trackVisitJobUrlApi,
 } from '../services/api'
+import { useAuth } from '../context/AuthContext'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
+import { getCachedApplications, saveCachedApplications } from '../services/offlineDb'
 
 export default function StudentApplications() {
+  const { user } = useAuth()
+  const userId = user?._id || user?.id || 'guest_student'
+
   const [searchParams, setSearchParams] = useSearchParams()
   const initialTab = searchParams.get('tab') === 'jobs' ? 'jobs' : 'internships'
   const [activeTab, setActiveTab] = useState(initialTab)
@@ -27,10 +34,18 @@ export default function StudentApplications() {
   const [internshipApps, setInternshipApps] = useState([])
   const [jobApps, setJobApps] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isOffline, setIsOffline] = useState(!isOnline())
 
   useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) {
+        loadAllApplications()
+      }
+    })
     loadAllApplications()
-  }, [])
+    return unsub
+  }, [userId])
 
   function handleTabChange(tab) {
     setActiveTab(tab)
@@ -40,19 +55,43 @@ export default function StudentApplications() {
   async function loadAllApplications() {
     setLoading(true)
     try {
-      const [internshipRes, jobRes] = await Promise.all([
-        fetchMyApplications().catch((err) => {
-          console.warn('Could not fetch internship applications:', err.message)
-          return { applications: [] }
-        }),
-        fetchMyJobApplications().catch((err) => {
-          console.warn('Could not fetch job applications:', err.message)
-          return { applications: [] }
-        }),
-      ])
+      // 1. Immediately render cached applications
+      const cached = await getCachedApplications(userId)
+      if (cached) {
+        if (cached.internshipApps) setInternshipApps(cached.internshipApps)
+        if (cached.jobApps) setJobApps(cached.jobApps)
+      }
 
-      setInternshipApps(internshipRes?.applications || [])
-      setJobApps(jobRes?.applications || [])
+      // 2. Fetch fresh applications if online
+      if (isOnline()) {
+        const [internshipRes, jobRes] = await Promise.all([
+          fetchMyApplications().catch((err) => {
+            console.warn('Could not fetch internship applications:', err.message)
+            return { applications: [] }
+          }),
+          fetchMyJobApplications().catch((err) => {
+            console.warn('Could not fetch job applications:', err.message)
+            return { applications: [] }
+          }),
+        ])
+
+        const iApps = internshipRes?.applications || []
+        const jApps = jobRes?.applications || []
+        setInternshipApps(iApps)
+        setJobApps(jApps)
+
+        await saveCachedApplications(userId, {
+          internshipApps: iApps,
+          jobApps: jApps,
+        })
+      }
+    } catch (err) {
+      console.warn('Network error fetching applications, keeping cached data:', err.message)
+      const cached = await getCachedApplications(userId)
+      if (cached) {
+        if (cached.internshipApps) setInternshipApps(cached.internshipApps)
+        if (cached.jobApps) setJobApps(cached.jobApps)
+      }
     } finally {
       setLoading(false)
     }
@@ -60,6 +99,10 @@ export default function StudentApplications() {
 
   async function handleVisitJobPortal(app) {
     if (!app?.applicationUrl) return
+    if (!isOnline()) {
+      alert('Internet connection required to open external job application portal.')
+      return
+    }
 
     if (!app.externalPortalVisited) {
       try {
@@ -131,6 +174,18 @@ export default function StudentApplications() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-12">
+      {/* Offline Alert Banner */}
+      {isOffline && (
+        <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
+          <div className="flex items-center gap-2">
+            <WifiOff size={16} className="text-amber-600 shrink-0" />
+            <span>
+              <strong>Offline Mode Active:</strong> Displaying cached application records. Submitting new applications or visiting external job portals requires an active internet connection.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Top Banner Card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Play, Clock3, X, BookOpen, Loader2, AlertCircle, Video } from 'lucide-react'
+import { Play, Clock3, X, BookOpen, Loader2, AlertCircle, Video, WifiOff } from 'lucide-react'
 import { fetchVideos } from '../services/api'
+import { isOnline, subscribeNetworkStatus } from '../services/networkStatus'
+import { getCachedLearningModules, saveCachedLearningModules } from '../services/offlineDb'
 
 function extractYoutubeId(input) {
   if (!input) return ''
@@ -29,6 +31,8 @@ function getThumbnail(module) {
 }
 
 function VideoModal({ module, onClose }) {
+  const offline = !isOnline()
+
   useEffect(() => {
     function handleEscape(e) {
       if (e.key === 'Escape') onClose()
@@ -65,7 +69,15 @@ function VideoModal({ module, onClose }) {
           </button>
         </div>
         <div className="aspect-video w-full bg-slate-900">
-          {ytId ? (
+          {offline ? (
+            <div className="flex h-full w-full flex-col items-center justify-center p-6 text-white text-center">
+              <WifiOff size={32} className="text-amber-400 mb-3" />
+              <p className="text-sm font-semibold">Internet Connection Required</p>
+              <p className="mt-1 text-xs text-slate-300 max-w-sm">
+                Video streaming requires an active internet connection. Module metadata is available offline from cache.
+              </p>
+            </div>
+          ) : ytId ? (
             <iframe
               className="h-full w-full"
               src={`https://www.youtube.com/embed/${ytId}?autoplay=1`}
@@ -151,28 +163,65 @@ export default function LearningModules() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [activeModule, setActiveModule] = useState(null)
+  const [isOffline, setIsOffline] = useState(!isOnline())
 
   async function loadVideos() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetchVideos({ status: 'Published' })
-      const list = (res?.videos || []).filter((v) => v.status !== 'Draft')
-      setModules(list)
+      // 1. Load cached learning modules immediately
+      const cached = await getCachedLearningModules()
+      if (cached && cached.length > 0) {
+        setModules(cached)
+      }
+
+      // 2. Fetch fresh data if online
+      if (isOnline()) {
+        const res = await fetchVideos({ status: 'Published' })
+        const list = (res?.videos || []).filter((v) => v.status !== 'Draft')
+        setModules(list)
+        if (list.length > 0) {
+          await saveCachedLearningModules(list)
+        }
+      }
     } catch (err) {
-      console.error('[LearningCenter] Failed to load videos:', err)
-      setError(err.message || 'Failed to load learning videos')
+      console.warn('[LearningCenter] Failed to fetch online videos, keeping cached list:', err.message)
+      const cached = await getCachedLearningModules()
+      if (cached && cached.length > 0) {
+        setModules(cached)
+      } else {
+        setError(err.message || 'Failed to load learning videos')
+      }
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
+    const unsub = subscribeNetworkStatus((online) => {
+      setIsOffline(!online)
+      if (online) {
+        loadVideos()
+      }
+    })
     loadVideos()
+    return unsub
   }, [])
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      {/* Offline Alert Banner */}
+      {isOffline && (
+        <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
+          <div className="flex items-center gap-2">
+            <WifiOff size={16} className="text-amber-600 shrink-0" />
+            <span>
+              <strong>Offline Mode Active:</strong> Showing cached learning modules. Video streaming requires an active internet connection.
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card">
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">

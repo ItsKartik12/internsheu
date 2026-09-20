@@ -21,23 +21,21 @@ import {
   FALLBACK_INTERNSHIPS,
   FALLBACK_COURSES,
   FALLBACK_TOPICS,
-} from '../data/fallbackData'
+} from '../data/fallbackData.js'
 
 // ── API Base URL ─────────────────────────────────────────────────────────
 
-const LOCAL_API_BASE_URL = 'http://localhost:3001'
+const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined
+const LOCAL_API_BASE_URL = env?.VITE_API_BASE_URL?.trim() || 'http://localhost:5000'
 const PRODUCTION_API_BASE_URL = 'https://internsheu.onrender.com'
 
-// In local development, always use the local backend.
-// This prevents an old VITE_API_BASE_URL from accidentally sending
-// local requests to the deployed Render backend.
-//
+// In local development, default to the local backend.
 // In production, VITE_API_BASE_URL can override the default Render URL.
-const API_BASE_URL = import.meta.env.DEV
+const API_BASE_URL = env?.DEV
   ? LOCAL_API_BASE_URL
   : (
-    import.meta.env.VITE_API_BASE_URL?.trim() ||
-    PRODUCTION_API_BASE_URL
+    env?.VITE_API_BASE_URL?.trim() ||
+    (env ? PRODUCTION_API_BASE_URL : 'http://localhost:5000')
   )
 
 // ── Local Storage Resilience Helpers ─────────────────────────────────────
