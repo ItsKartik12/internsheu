@@ -10,6 +10,10 @@
 // Production:
 //   Frontend: Vercel
 //   Backend:  https://internsheu.onrender.com
+//
+// Exports include: auth, courses, internships, jobs, job-links, contests,
+// assessments, problems, industry pipeline, candidate matrix, payments
+// (getPaymentConfigApi, createPostingOrderApi, verifyAndPublishPostingApi).
 // ────────────────────────────────────────────────────────────────────────
 
 import {
