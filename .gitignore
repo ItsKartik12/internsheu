@@ -6,3 +6,4 @@ dist/
 .DS_Store
 .freebuff/
 /ai-interviewer/
+.env.example
