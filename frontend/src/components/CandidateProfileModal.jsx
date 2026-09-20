@@ -456,7 +456,9 @@ export default function CandidateProfileModal({ candidateId, candidate, onClose,
               <div className="rounded-xl border border-slate-200 p-4 text-xs space-y-1">
                 <div className="flex justify-between items-center">
                   <span className="font-bold text-slate-900">AI Mock Interview Benchmark:</span>
-                  <span className="font-bold text-purple-700">{industryMatrix?.aiInterviewScore || 84}%</span>
+                  <span className="font-bold text-purple-700">
+                    {industryMatrix?.aiInterviewScore != null ? `${industryMatrix.aiInterviewScore}%` : 'Not Assessed'}
+                  </span>
                 </div>
                 <p className="text-slate-500 text-[11px]">Evaluated on behavioral communication, system design explanation, and technical clarity.</p>
               </div>

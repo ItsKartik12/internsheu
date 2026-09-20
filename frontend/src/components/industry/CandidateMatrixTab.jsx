@@ -321,7 +321,9 @@ export default function CandidateMatrixTab() {
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className="font-semibold text-purple-700">{c.aiInterview}%</span>
+                      <span className="font-semibold text-purple-700">
+                        {c.aiInterview != null ? `${c.aiInterview}%` : 'Not Assessed'}
+                      </span>
                     </td>
                     <td className="py-3.5 px-4">
                       {c.overall !== null ? (

@@ -70,8 +70,9 @@ export default function LiveInterview({ session, onFinished, onExit }) {
         setQuestionType(data.questionType || 'introduction')
         questionCountRef.current = 1
         setTurns([{ speaker: 'interviewer', text: data.question || '' }])
-        // Resume case: backend may already have turns; show them.
-        if (data.resumeTurns) setTurns(data.resumeTurns)
+        // Resume support: backend replays stored interviewer turns for a
+        // session that already started (e.g. after a refresh).
+        if (data.turns && Array.isArray(data.turns)) setTurns(data.turns)
         beginAiSpeaking(data.question || '')
         await voice.start()
       } catch (err) {
@@ -156,7 +157,7 @@ export default function LiveInterview({ session, onFinished, onExit }) {
     'ai-speaking': 'AI is speaking…',
     listening: voice.reconnecting ? 'Reconnecting…' : 'Listening — speak or type your answer',
     processing: 'Evaluating your answer…',
-    error: 'Voice error',
+    error: 'Interview voice error — see the message below your answer box',
   }[phase] || ''
 
   const micActive = phase === 'listening' && !voice.reconnecting

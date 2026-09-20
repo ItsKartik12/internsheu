@@ -8,6 +8,7 @@ import TalentPipeline from '../models/TalentPipeline.js'
 import InternshipApplication from '../models/InternshipApplication.js'
 import IndustryRequirement from '../models/IndustryRequirement.js'
 import ContactUnlock from '../models/ContactUnlock.js'
+import InterviewSession from '../models/InterviewSession.js'
 
 /**
  * Helpers to mask contact info for student privacy
@@ -65,11 +66,45 @@ async function computeStudentIndustryMatrix(studentId, scoringWeights = null) {
     bestRank = validRanks.length > 0 ? Math.min(...validRanks) : 1
   }
 
-  // 3. AI Mock Interview (if recorded in profile or default baseline)
-  let aiInterviewScore = 80 // baseline score for enrolled students
-  if (profile?.achievements?.some((a) => a.title?.toLowerCase().includes('interview'))) {
-    aiInterviewScore = 88
+  // 3. AI Mock Interview — real evidence only. Selected skills are NOT
+  // scores: only skills that obtained a valid score in a completed AI
+  // interview count. No interview evidence ⇒ no AI interview score.
+  const interviewSessions = await InterviewSession.find({
+    userId: studentId,
+    status: 'Done',
+    'evaluation.assessedSkills.0': { $exists: true },
+  })
+    .select('evaluation.overallScore evaluation.assessedSkills')
+    .lean()
+
+  const interviewSkillMap = new Map() // lowercase skill → { display, scores: [] }
+  for (const s of interviewSessions) {
+    for (const a of s.evaluation?.assessedSkills || []) {
+      if (!a?.skill || typeof a.score !== 'number' || !Number.isFinite(a.score)) continue
+      const key = a.skill.toLowerCase().trim()
+      if (!key) continue
+      if (!interviewSkillMap.has(key)) {
+        interviewSkillMap.set(key, { skill: a.skill, scores: [] })
+      }
+      interviewSkillMap.get(key).scores.push(Math.max(0, Math.min(100, Math.round(a.score))))
+    }
   }
+  const interviewSkills = [...interviewSkillMap.values()].map((e) => ({
+    skill: e.skill,
+    score: Math.round(e.scores.reduce((x, y) => x + y, 0) / e.scores.length),
+    interviewsCount: e.scores.length,
+  }))
+  interviewSkills.sort((x, y) => y.score - x.score)
+
+  const interviewsCompleted = interviewSessions.length
+  // Overall interview score exists only when at least one interview produced evidence.
+  const aiInterviewScore =
+    interviewsCompleted > 0
+      ? Math.round(
+          interviewSessions.reduce((acc, s) => acc + (s.evaluation?.overallScore || 0), 0) /
+            interviewsCompleted
+        )
+      : null
 
   // 4. Overall Industry Score calculation ONLY when weights are explicitly configured
   let overallIndustryScore = null
@@ -119,7 +154,9 @@ async function computeStudentIndustryMatrix(studentId, scoringWeights = null) {
     },
     aiInterview: {
       score: aiInterviewScore,
-      status: 'Completed',
+      status: interviewsCompleted > 0 ? 'Completed' : 'Not Attempted',
+      interviewsCompleted,
+      skills: interviewSkills,
     },
     overallIndustryScore,
     isConfigured,
@@ -219,6 +256,28 @@ export async function getCandidateMatrix(req, res, next) {
       assessmentMap.set(sid, list)
     }
 
+    // AI interview evidence — real evaluations only, never a fabricated baseline
+    const interviewSessions = await InterviewSession.find({
+      userId: { $in: studentIds },
+      status: 'Done',
+      'evaluation.assessedSkills.0': { $exists: true },
+    })
+      .select('userId evaluation.overallScore')
+      .lean()
+    const interviewByStudent = new Map()
+    for (const s of interviewSessions) {
+      const key = s.userId?.toString()
+      if (!key) continue
+      if (!interviewByStudent.has(key)) interviewByStudent.set(key, { totals: 0, count: 0 })
+      const entry = interviewByStudent.get(key)
+      entry.totals += s.evaluation?.overallScore || 0
+      entry.count += 1
+    }
+    const interviewAvgFor = (sid) => {
+      const e = interviewByStudent.get(sid)
+      return e && e.count > 0 ? Math.round(e.totals / e.count) : null
+    }
+
     // Assemble candidates with evidence
     const candidates = students.map((student) => {
       const sid = student._id.toString()
@@ -246,8 +305,8 @@ export async function getCandidateMatrix(req, res, next) {
         dsaRank = validRanks.length > 0 ? Math.min(...validRanks) : 0
       }
 
-      // AI Mock Interview
-      const aiInterview = 84
+      // AI Mock Interview — null when no completed interview evidence exists
+      const aiInterview = interviewAvgFor(sid)
 
       // Match Score calculation against industry requirement or student skills
       let matchScore = 75
@@ -271,7 +330,8 @@ export async function getCandidateMatrix(req, res, next) {
         const wDsa = industryReq.scoringWeights.dsaWeight / 100
         const wAi = industryReq.scoringWeights.aiInterviewWeight / 100
         const normDsa = Math.min(100, Math.round((dsaScore / Math.max(1, studentContests.length * 300)) * 100))
-        overall = Math.round(assessmentScore * wAssess + normDsa * wDsa + aiInterview * wAi)
+        // No interview evidence contributes 0 to the weighted composite (shown as Not Assessed elsewhere)
+        overall = Math.round(assessmentScore * wAssess + normDsa * wDsa + (aiInterview ?? 0) * wAi)
       }
 
       const isContactUnlocked = Boolean(pipelineEntry?.contactUnlocked || unlockSet.has(sid))
@@ -329,8 +389,8 @@ export async function getCandidateMatrix(req, res, next) {
         // In ranking, lower number is better
         return isAsc ? valB - valA : valA - valB
       } else if (sort === 'aiInterview') {
-        valA = a.aiInterview
-        valB = b.aiInterview
+        valA = a.aiInterview ?? -1
+        valB = b.aiInterview ?? -1
       } else if (sort === 'match') {
         valA = a.matchScore
         valB = b.matchScore
@@ -375,7 +435,7 @@ export async function getCandidateProfile(req, res, next) {
       return res.status(404).json({ error: 'Candidate not found' })
     }
 
-    const [profile, skillResult, contestResults, assessmentAttempts, pipelineEntry, applications, existingUnlock] = await Promise.all([
+    const [profile, skillResult, contestResults, assessmentAttempts, pipelineEntry, applications, existingUnlock, interviewSessions] = await Promise.all([
       StudentProfile.findOne({ userId: studentId }).lean(),
       SkillResult.findOne({ studentId }).lean(),
       ContestResult.find({ studentId }).populate('contestId', 'title role company startDate').lean(),
@@ -383,6 +443,7 @@ export async function getCandidateProfile(req, res, next) {
       TalentPipeline.findOne({ industryId, studentId }).lean(),
       InternshipApplication.find({ studentId, industryId }).populate('internshipId', 'title location stipend').lean(),
       ContactUnlock.findOne({ companyId: industryId, candidateId: studentId }).lean(),
+      InterviewSession.find({ userId: studentId, status: 'Done' }).select('evaluation.overallScore').lean(),
     ])
 
     // Privacy: hide phone and email unless contact has been unlocked
@@ -418,7 +479,14 @@ export async function getCandidateProfile(req, res, next) {
       industryMatrix: {
         assessmentAttempts,
         contestResults,
-        aiInterviewScore: 84,
+        // Real average across completed AI interviews — null when none exist
+        aiInterviewScore:
+          interviewSessions.length > 0
+            ? Math.round(
+                interviewSessions.reduce((acc, s) => acc + (s.evaluation?.overallScore || 0), 0) /
+                  interviewSessions.length
+              )
+            : null,
       },
       pipelineStage: pipelineEntry?.stage || 'Matched',
       poolName: pipelineEntry?.poolName || 'General Pool',
@@ -534,12 +602,15 @@ export async function getTalentPipelineCandidates(req, res, next) {
 
     const studentIds = pipelineEntries.map((p) => p.studentId)
 
-    const [students, profiles, contestResults, assessmentAttempts, contactUnlocks] = await Promise.all([
+    const [students, profiles, contestResults, assessmentAttempts, contactUnlocks, interviewSessions] = await Promise.all([
       User.find({ _id: { $in: studentIds } }).select('-passwordHash').lean(),
       StudentProfile.find({ userId: { $in: studentIds } }).lean(),
       ContestResult.find({ studentId: { $in: studentIds } }).lean(),
       IndustryAssessmentAttempt.find({ studentId: { $in: studentIds } }).lean(),
       ContactUnlock.find({ companyId: industryId, candidateId: { $in: studentIds } }).lean(),
+      InterviewSession.find({ userId: { $in: studentIds }, status: 'Done' })
+        .select('userId evaluation.overallScore')
+        .lean(),
     ])
 
     const studentMap = new Map(students.map((s) => [s._id.toString(), s]))
@@ -575,12 +646,20 @@ export async function getTalentPipelineCandidates(req, res, next) {
         assessmentScore = Math.round(sum / studentAttempts.length)
       }
 
-      let dsaScore = 850
-      let dsaSolved = 3
+      let dsaScore = 0
+      let dsaSolved = 0
       if (studentContests.length > 0) {
         dsaScore = studentContests.reduce((acc, curr) => acc + (curr.score || 0), 0)
         dsaSolved = studentContests.reduce((acc, curr) => acc + (curr.problemsSolved || 0), 0)
       }
+
+      // AI Interview — real average over completed interviews; null if none
+      const sidStr = entry.studentId.toString()
+      const ivw = interviewSessions.filter((s) => s.userId?.toString() === sidStr)
+      const aiInterviewScore =
+        ivw.length > 0
+          ? Math.round(ivw.reduce((acc, s) => acc + (s.evaluation?.overallScore || 0), 0) / ivw.length)
+          : null
 
       const isUnlocked = Boolean(entry.contactUnlocked || unlockSet.has(sid))
       const rawEmail = student.email || prof?.basicInfo?.professionalEmail || ''
@@ -603,8 +682,8 @@ export async function getTalentPipelineCandidates(req, res, next) {
         assessmentScore,
         dsaScore,
         dsaSolved,
-        aiInterviewScore: 84,
-        aiInterviewStatus: 'Completed',
+        aiInterviewScore,
+        aiInterviewStatus: aiInterviewScore != null ? 'Completed' : 'Not Attempted',
         institute: prof?.education?.[0]?.college || 'Institute of Technology',
         branch: student.fieldMark || prof?.education?.[0]?.branch || 'Computer Science',
         updatedAt: entry.updatedAt,

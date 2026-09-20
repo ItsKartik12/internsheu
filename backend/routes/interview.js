@@ -18,6 +18,23 @@ const router = Router()
 router.use(authenticate)
 router.use(authorize('student', 'admin'))
 
+// Identity boundary: every interview query (StudentProfile, InterviewSession,
+// Skill Matrix aggregation) filters by the real MongoDB User _id. The offline
+// demo bridge (mock-token) issues a non-ObjectId demo identity when MongoDB
+// is unreachable — letting it reach those ObjectId queries would crash with a
+// CastError. Reject it early with a clear, controlled error instead.
+function requireRealUser(req, res, next) {
+  if (req.user?.isDemoIdentity) {
+    return res.status(503).json({
+      error: 'Interviews require a signed-in account with the database available. Demo/offline sessions cannot be used here.',
+      dbUnavailable: true,
+    })
+  }
+  next()
+}
+
+router.use(requireRealUser)
+
 // GET /api/interview/skills — profile-derived skill recommendations (setup step 2)
 router.get('/skills', getRecommendedSkills)
 

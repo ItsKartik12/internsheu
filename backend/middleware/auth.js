@@ -18,7 +18,15 @@ export async function authenticate(req, res, next) {
     if (token && token.startsWith('mock-token-')) {
       const role = token.split('-')[2] || 'student'
       const demoEmail = `${role}@internsheu.edu`
-      let user = await User.findOne({ email: demoEmail }).select('-passwordHash').lean()
+      // The bridge is designed to work even when MongoDB is unreachable
+      // (offline/demo logins), so a database error must not turn into a 500
+      // — fall back to the built-in demo identity below.
+      let user = null
+      try {
+        user = await User.findOne({ email: demoEmail }).select('-passwordHash').lean()
+      } catch {
+        user = null
+      }
       if (!user) {
         user = {
           _id: `demo-${role}-1`,
@@ -26,6 +34,10 @@ export async function authenticate(req, res, next) {
           email: demoEmail,
           role,
           isActive: true,
+          // Explicit demo flag — downstream guards (e.g. the interview
+          // router) use this to keep demo identities OUT of MongoDB
+          // ObjectId queries instead of crashing with a CastError.
+          isDemoIdentity: true,
         }
       }
       req.user = user
@@ -34,7 +46,18 @@ export async function authenticate(req, res, next) {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET)
 
-    const user = await User.findById(decoded.id).select('-passwordHash').lean()
+    let user
+    try {
+      user = await User.findById(decoded.id).select('-passwordHash').lean()
+    } catch (dbErr) {
+      // MongoDB unavailable: a raw Mongoose error here would surface as a
+      // confusing 500 ("buffering timed out"). Report the real cause instead.
+      console.warn('[auth] DB lookup failed for real-token auth:', dbErr.message)
+      return res.status(503).json({
+        error: 'Database is unavailable. Please try again shortly.',
+        dbUnavailable: true,
+      })
+    }
     if (!user) {
       return res.status(401).json({ error: 'User no longer exists' })
     }

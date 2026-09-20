@@ -33,7 +33,7 @@ export default function IndustryMatrix() {
 
   const assessment = matrixData?.assessment || { score: 0, totalAttempts: 0, passedCount: 0, recentAttempts: [] }
   const dsa = matrixData?.dsa || { score: 0, problemsSolved: 0, bestRank: 0, contestsParticipated: 0, contests: [] }
-  const aiInterview = matrixData?.aiInterview || { score: 80, status: 'Not Attempted' }
+  const aiInterview = matrixData?.aiInterview || { score: null, status: 'Not Attempted', skills: [] }
   const isConfigured = matrixData?.isConfigured || false
   const overallScore = matrixData?.overallIndustryScore
   const weights = matrixData?.weightsApplied
@@ -252,7 +252,7 @@ export default function IndustryMatrix() {
                     <h3 className="text-sm font-bold text-slate-900">AI Mock Interview</h3>
                   </div>
                   <span className="rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-bold text-purple-700">
-                    {aiInterview.score}%
+                    {aiInterview.score != null ? `${aiInterview.score}%` : 'Not Assessed'}
                   </span>
                 </div>
 

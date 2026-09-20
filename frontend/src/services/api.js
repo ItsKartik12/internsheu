@@ -689,9 +689,23 @@ export async function deleteVideoApi(id) {
 }
 
 // ── AI Interview APIs ──
-export async function getRecommendedInterviewSkills(role) {
-  const qs = role ? `?role=${encodeURIComponent(role)}` : ''
-  return safeRequest(`/api/interview/skills${qs}`, {}, { recommendedSkills: [] })
+// Returns { skills, source } on success (source: 'gemini' | 'fallback' |
+// 'unavailable'), or null when the request itself failed (network/auth/server
+// error) so the UI can distinguish "no recommendations" from "request failed".
+export async function getRecommendedInterviewSkills({ role, company = '', level = '' }) {
+  const params = new URLSearchParams()
+  if (role) params.set('role', role)
+  if (company) params.set('company', company)
+  if (level) params.set('level', level)
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  try {
+    const data = await request(`/api/interview/skills${qs}`)
+    const skills = Array.isArray(data?.skills) ? data.skills.filter((s) => typeof s === 'string' && s.trim()) : []
+    return { skills, source: data?.source || 'unavailable' }
+  } catch (err) {
+    console.warn(`[api] getRecommendedInterviewSkills failed: ${err?.message || err}`)
+    return null
+  }
 }
 
 export async function createInterviewApi(payload) {

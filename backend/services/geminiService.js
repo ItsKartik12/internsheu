@@ -7,13 +7,16 @@
 
 const GEMINI_TIMEOUT_MS = 20000
 
-// Candidate models in order of responsiveness & quota stability
-// (same list as the reference implementation).
+// Candidate models in order of responsiveness & quota stability.
+// Updated after the retired 1.5/2.0 IDs (and 2.5 IDs, which are closed to
+// new API keys) started returning 404. All three below were live-verified
+// with the configured key: 3.6-flash + 3.5-flash-lite return 200, and
+// gemini-flash-latest is an evergreen alias that always tracks a current
+// flash model as a safety net.
 const CANDIDATE_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-lite',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
+  'gemini-3.6-flash',
+  'gemini-flash-latest',
+  'gemini-3.5-flash-lite',
 ]
 
 export function isGeminiConfigured() {
@@ -22,9 +25,11 @@ export function isGeminiConfigured() {
 
 /**
  * Core chat call. messages: [{ role: 'system'|'user'|'assistant', content }]
+ * options.maxOutputTokens overrides the default ceiling (the final evaluation
+ * JSON is much larger than a single interview turn and needs more room).
  * Returns plain text, or throws with a readable message.
  */
-export async function askGemini(messages) {
+export async function askGemini(messages, options = {}) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured on the backend.')
@@ -50,7 +55,7 @@ export async function askGemini(messages) {
     contents: conversationTurns,
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 2048,
+      maxOutputTokens: options.maxOutputTokens || 2048,
     },
   }
   if (systemMessage) {
@@ -141,6 +146,116 @@ function stringList(value, maxItems = 6) {
 
 function normalizeLevel(value, fallback = 'Intermediate') {
   return ['Beginner', 'Intermediate', 'Advanced'].includes(value) ? value : fallback
+}
+
+// ── Skill recommendation (setup step 2) ──────────────────────────────
+// Role/company/level-driven. The candidate's profile is ONLY context for
+// personalization — profile skills are never blindly copied into the
+// recommendation list or auto-selected as interview skills.
+
+/** Role-keyword → relevant skills table for the no-AI fallback. */
+const ROLE_SKILL_TABLE = [
+  { re: /front|react|web|ui/, skills: ['JavaScript', 'React', 'HTML & CSS', 'State Management', 'Responsive Design'] },
+  { re: /back|node|api|server/, skills: ['Node.js', 'REST APIs', 'Express.js', 'Databases', 'Authentication & Security'] },
+  { re: /full|stack/, skills: ['JavaScript', 'React', 'Node.js', 'REST APIs', 'MongoDB', 'Deployment Basics'] },
+  { re: /mobile|android|flutter|ios/, skills: ['Mobile UI Design', 'State Management', 'REST APIs', 'App Lifecycle'] },
+  { re: /data|ml|ai|machine/, skills: ['Python', 'Data Analysis', 'Machine Learning Basics', 'Statistics', 'SQL'] },
+  { re: /devops|cloud|sre|platform/, skills: ['Linux Basics', 'Docker', 'CI/CD', 'Cloud Fundamentals', 'Networking Basics'] },
+  { re: /java|spring/, skills: ['Java', 'OOP Concepts', 'Spring Boot', 'REST APIs', 'SQL'] },
+  { re: /python|django/, skills: ['Python', 'Django', 'REST APIs', 'SQL', 'Data Structures'] },
+  { re: /qa|test|sdet/, skills: ['Testing Fundamentals', 'Automation Basics', 'API Testing', 'Selenium Basics'] },
+]
+
+/**
+ * Deterministic role-relevant fallback used when Gemini is unavailable.
+ * Never returns the candidate's whole profile skill list — at most one
+ * profile skill may appear per category, and only for the matched role.
+ */
+export function fallbackSkillRecommendations(role, profile = null, level = '') {
+  const roleLower = (role || '').toLowerCase()
+  const matched = ROLE_SKILL_TABLE.filter((e) => e.re.test(roleLower))
+  const base = matched.length
+    ? matched.flatMap((e) => e.skills)
+    : ['JavaScript', 'Data Structures', 'REST APIs', 'SQL', 'Git & Version Control']
+
+  // Level-aware augmentation (one extra topic).
+  if (level === 'Advanced') base.push('System Design Basics')
+  else if (level === 'Beginner') base.push('Programming Fundamentals')
+
+  const out = []
+  const seen = new Set()
+  const push = (name) => {
+    const key = String(name).toLowerCase().trim()
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    out.push(String(name).trim())
+  }
+  base.forEach(push)
+
+  // Light personalization: up to 2 of the candidate's own skills, strictly
+  // capped — profile skills must never flood the recommendation list.
+  if (profile?.skills) {
+    const own = Object.values(profile.skills)
+      .filter((arr) => Array.isArray(arr))
+      .flat()
+      .filter(Boolean)
+    own.slice(0, 2).forEach(push)
+  }
+  return out.slice(0, 8)
+}
+
+/**
+ * AI-generated skill recommendations for the interview setup (step 2).
+ * Uses role + company + level as the primary signal and the profile summary
+ * only as background context. Returns a clean string list, or null when
+ * Gemini is not configured / fails / returns nothing usable (caller falls
+ * back to fallbackSkillRecommendations).
+ */
+export async function recommendInterviewSkills({ role, company, level, profileSummary }) {
+  if (!isGeminiConfigured()) return null
+
+  const system = [
+    'You are a technical interview designer for a college placement platform.',
+    'Given a target role, optional target company, candidate level, and short candidate background, recommend 5-8 concrete skills to assess in a mock interview.',
+    'RULES:',
+    '- Skills must be directly relevant to the role/company — general software skills only fill gaps.',
+    '- Prefer widely recognized skill names (e.g. "React", "Node.js", "REST APIs", "SQL").',
+    '- Use the candidate background only to make topics relevant; do NOT dump their whole skill list.',
+    '- Each skill must be assessable through spoken Q&A in a short interview.',
+    'Reply with ONLY JSON: {"skills": ["...", "..."]}',
+  ].join('\n')
+
+  const user = [
+    `Target role: ${role}`,
+    company ? `Target company: ${company}` : 'Target company: (not specified)',
+    `Candidate level: ${level || 'Intermediate'}`,
+    '',
+    'Candidate background (context only):',
+    profileSummary || '(no profile information provided)',
+  ].join('\n')
+
+  try {
+    const response = await askGemini([
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ])
+    const parsed = parseAiJson(response)
+    if (!Array.isArray(parsed.skills)) return null
+    const skills = []
+    const seen = new Set()
+    for (const item of parsed.skills) {
+      if (typeof item !== 'string') continue
+      const name = item.trim().slice(0, 60)
+      const key = name.toLowerCase()
+      if (!name || seen.has(key)) continue
+      seen.add(key)
+      skills.push(name)
+      if (skills.length >= 10) break
+    }
+    return skills.length > 0 ? skills : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -286,6 +401,7 @@ export function buildEvaluationMessages({ interview, transcript }) {
     `You are an expert technical interview evaluator. You produce an evidence-based assessment of the candidate from the transcript only.`,
     `HARD RULES:`,
     `- Score ONLY skills that the interview ACTUALLY tested (put them in assessedSkills with transcript evidence).`,
+    `- Name assessed skills using the EXACT names from the selected skill scope when the tested topic corresponds to one (e.g. use "SQL", not "MongoDB", if SQL was the selected scope and the questions tested SQL concepts). Only use a different name if the conversation clearly tested a skill outside the selected scope.`,
     `- Selected skills that were never really probed must go into notAssessedSkills with a reason. NEVER give them a score, not even zero.`,
     `- Scores are 0-100 integers grounded in the answers. No arbitrary numbers.`,
     `- communication and problemSolving are separate from technical skill scores.`,

@@ -353,7 +353,7 @@ export default function ShortlistedCandidatesTab({ onNavigateToMatrix }) {
                     {/* AI Interview */}
                     <td className="py-3.5 px-4 text-center">
                       <span className="font-semibold text-purple-700">
-                        {c.aiInterviewScore != null ? `${Math.round(c.aiInterviewScore)}%` : '84%'}
+                        {c.aiInterviewScore != null ? `${Math.round(c.aiInterviewScore)}%` : 'Not Assessed'}
                       </span>
                     </td>
 
