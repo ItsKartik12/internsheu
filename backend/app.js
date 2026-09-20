@@ -43,7 +43,6 @@ import studentIndustryMatrixRoutes from './routes/studentIndustryMatrix.js'
 import sitemapRoutes from './routes/sitemap.js'
 
 import seoCrawlerRoutes from './routes/seoCrawler.js'
-
 import paymentRoutes from './routes/paymentRoutes.js'
 
 import interviewRoutes from './routes/interview.js'
@@ -106,7 +105,6 @@ app.use('/api/job-links', jobLinkRoutes)
 app.use('/api/videos', videoRoutes)
 
 app.use('/api/admin', adminRoutes)
-
 app.use('/api/payments', paymentRoutes)
 
 // New Industry & Problem Library Routes

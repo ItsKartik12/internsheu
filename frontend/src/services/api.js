@@ -2123,9 +2123,8 @@ export async function getMyPaymentTransactionsApi() {
   )
 }
 
-// ── API Config ───────────────────────────────────────────────────────────
-
 export const apiConfig = {
   baseUrl: API_BASE_URL,
   isConfigured: Boolean(API_BASE_URL),
 }
+
