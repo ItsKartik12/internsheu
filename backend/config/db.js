@@ -25,9 +25,17 @@ if (!process.env.VERCEL) {
 }
 
 let cachedConnection = null
+let lastConnectionError = null
+let lastAttemptTime = 0
+const RECONNECT_COOLDOWN_MS = 15000
+
+export function isDbConnected() {
+  return mongoose.connection.readyState === 1
+}
 
 export async function connectDB() {
   if (mongoose.connection.readyState >= 1) {
+    lastConnectionError = null
     return mongoose.connection
   }
 
@@ -37,11 +45,21 @@ export async function connectDB() {
     throw new Error('MONGODB_URI environment variable is missing')
   }
 
+  // Fast-fail during cooldown when DB was recently unreachable
+  if (lastConnectionError && Date.now() - lastAttemptTime < RECONNECT_COOLDOWN_MS) {
+    throw lastConnectionError
+  }
+
   if (!cachedConnection) {
+    lastAttemptTime = Date.now()
     cachedConnection = mongoose.connect(uri, {
       serverSelectionTimeoutMS: 5000,
+    }).then((conn) => {
+      lastConnectionError = null
+      return conn
     }).catch((err) => {
       cachedConnection = null
+      lastConnectionError = err
       console.warn('[db] MongoDB connection error:', err.message)
       throw err
     })
@@ -50,3 +68,4 @@ export async function connectDB() {
   await cachedConnection
   return mongoose.connection
 }
+

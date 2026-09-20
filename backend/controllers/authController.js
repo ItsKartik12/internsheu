@@ -1,6 +1,27 @@
+import mongoose from 'mongoose'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
+
+const DEMO_USERS = {
+  'student@internsheu.edu': {
+    role: 'student',
+    name: 'Aarav Sharma',
+    enrollmentNo: '2024CS001',
+  },
+  'educator@internsheu.edu': {
+    role: 'educator',
+    name: 'Demo Faculty',
+  },
+  'industry@internsheu.edu': {
+    role: 'industry',
+    name: 'Demo Industry Partner',
+  },
+  'admin@internsheu.edu': {
+    role: 'admin',
+    name: 'Demo Administrator',
+  },
+}
 
 function signToken(userId) {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
@@ -17,6 +38,13 @@ export async function register(req, res, next) {
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'name, email, and password are required' })
+    }
+
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        error: 'Database is unavailable. Please try again later.',
+        dbUnavailable: true,
+      })
     }
 
     const validRoles = ['student', 'educator', 'industry', 'admin']
@@ -88,7 +116,34 @@ export async function login(req, res, next) {
       return res.status(400).json({ error: 'email and password are required' })
     }
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() })
+    const cleanEmail = email.toLowerCase().trim()
+
+    // Offline / demo login path: only allowed when DB is unavailable
+    // and matching the explicit preset demo accounts with demo credentials.
+    if (mongoose.connection.readyState !== 1) {
+      const demoAccount = DEMO_USERS[cleanEmail]
+      if (demoAccount && password === 'password123') {
+        const token = `mock-token-${demoAccount.role}-${Date.now()}`
+        return res.json({
+          token,
+          user: {
+            _id: `demo-${demoAccount.role}-1`,
+            name: demoAccount.name,
+            email: cleanEmail,
+            role: demoAccount.role,
+            enrollmentNo: demoAccount.enrollmentNo,
+            isActive: true,
+            isDemoIdentity: true,
+          },
+        })
+      }
+      return res.status(503).json({
+        error: 'Database is unavailable. Please try again later.',
+        dbUnavailable: true,
+      })
+    }
+
+    const user = await User.findOne({ email: cleanEmail })
     if (!user || !user.passwordHash) {
       return res.status(401).json({ error: 'Invalid email or password' })
     }

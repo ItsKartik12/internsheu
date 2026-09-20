@@ -1,3 +1,4 @@
+import mongoose from 'mongoose'
 import InterviewSession from '../models/InterviewSession.js'
 import StudentProfile from '../models/StudentProfile.js'
 import {
@@ -11,6 +12,7 @@ import {
   recommendInterviewSkills,
   fallbackSkillRecommendations,
 } from '../services/geminiService.js'
+
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -116,6 +118,17 @@ function difficultyTargets(plan) {
 // skill recommendations for confirmation.
 export async function createInterview(req, res, next) {
   try {
+    if (
+      mongoose.connection.readyState !== 1 ||
+      req.user?.isDemoIdentity ||
+      !mongoose.Types.ObjectId.isValid(req.user?._id)
+    ) {
+      return res.status(503).json({
+        error: 'Database unavailable. Please try again later.',
+        dbUnavailable: true,
+      })
+    }
+
     const { role, company, level, selectedSkills } = req.body
 
     const safeRole = sanitizeString(role, 80)
@@ -169,8 +182,7 @@ export async function createInterview(req, res, next) {
 // ── GET /api/interview/skills?role=&company=&level= ──────────────────
 // AI-generated skill recommendations for setup step 2, derived from the
 // target role/company/level. The candidate's profile is passed only as
-// background context. Falls back to a deterministic role-relevant list if
-// Gemini is unconfigured/unavailable — never a dump of profile skills.
+// optional background context. Decoupled from MongoDB.
 export async function getRecommendedSkills(req, res, next) {
   try {
     const role = sanitizeString(req.query.role, 80)
@@ -181,12 +193,17 @@ export async function getRecommendedSkills(req, res, next) {
       return res.status(400).json({ error: 'Target role is required to recommend skills' })
     }
 
-    // The profile is only personalization context — a database hiccup must
-    // never turn skill recommendations into a 500 (role/company/level alone
-    // are enough for both the AI path and the deterministic fallback).
+    // The profile is only optional personalization context — a database hiccup or
+    // demo identity must never prevent skill recommendations from succeeding.
     let profile = null
     try {
-      profile = await StudentProfile.findOne({ userId: req.user._id }).lean()
+      if (
+        mongoose.connection.readyState === 1 &&
+        !req.user?.isDemoIdentity &&
+        mongoose.Types.ObjectId.isValid(req.user?._id)
+      ) {
+        profile = await StudentProfile.findOne({ userId: req.user._id }).lean()
+      }
     } catch {
       profile = null
     }
@@ -195,6 +212,9 @@ export async function getRecommendedSkills(req, res, next) {
     let skills = await recommendInterviewSkills({ role, company, level, profileSummary })
     let source = 'gemini'
     if (!skills) {
+      if (isGeminiConfigured()) {
+        return res.status(502).json({ error: 'AI service is temporarily unavailable. Please try again.' })
+      }
       skills = fallbackSkillRecommendations(role, profile, level)
       source = 'fallback'
     }

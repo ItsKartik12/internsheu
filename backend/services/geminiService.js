@@ -7,16 +7,15 @@
 
 const GEMINI_TIMEOUT_MS = 20000
 
-// Candidate models in order of responsiveness & quota stability.
-// Updated after the retired 1.5/2.0 IDs (and 2.5 IDs, which are closed to
-// new API keys) started returning 404. All three below were live-verified
-// with the configured key: 3.6-flash + 3.5-flash-lite return 200, and
-// gemini-flash-latest is an evergreen alias that always tracks a current
-// flash model as a safety net.
+// Candidate models in order of capability & quota stability (September 2026).
+// gemini-3.8-flash reached GA on September 2 2026 and is the recommended
+// default. gemini-3.5-flash and gemini-3.5-flash-lite are reliable fallbacks.
+// gemini-flash-latest is an evergreen alias kept as a final safety net.
 const CANDIDATE_MODELS = [
-  'gemini-3.6-flash',
-  'gemini-flash-latest',
+  'gemini-3.8-flash',
+  'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
+  'gemini-flash-latest',
 ]
 
 export function isGeminiConfigured() {

@@ -10,7 +10,8 @@ import {
   getMyInterviewSkillResults,
 } from '../controllers/interviewController.js'
 import { getDeepgramTemporaryKey, classifyDeepgramError } from '../services/deepgramService.js'
-import { authenticate, authorize } from '../middleware/auth.js'
+import { authenticate, authorize, requireRealDbAndUser } from '../middleware/auth.js'
+
 
 const router = Router()
 
@@ -18,31 +19,12 @@ const router = Router()
 router.use(authenticate)
 router.use(authorize('student', 'admin'))
 
-// Identity boundary: every interview query (StudentProfile, InterviewSession,
-// Skill Matrix aggregation) filters by the real MongoDB User _id. The offline
-// demo bridge (mock-token) issues a non-ObjectId demo identity when MongoDB
-// is unreachable — letting it reach those ObjectId queries would crash with a
-// CastError. Reject it early with a clear, controlled error instead.
-function requireRealUser(req, res, next) {
-  if (req.user?.isDemoIdentity) {
-    return res.status(503).json({
-      error: 'Interviews require a signed-in account with the database available. Demo/offline sessions cannot be used here.',
-      dbUnavailable: true,
-    })
-  }
-  next()
-}
-
-router.use(requireRealUser)
-
 // GET /api/interview/skills — profile-derived skill recommendations (setup step 2)
+// Decoupled from MongoDB: Gemini generates recommendations from role, company, and level.
+// Available in offline/demo mode and online mode.
 router.get('/skills', getRecommendedSkills)
 
-// POST /api/interview/create — persist step 1 + step 2 configuration
-router.post('/create', createInterview)
-
-// Deepgram temporary token — authenticated so only logged-in users can mint
-// short-lived voice credentials. The permanent key stays backend-only.
+// Deepgram temporary token — voice credentials do not require database persistence.
 router.post('/deepgram-token', async (req, res) => {
   try {
     const token = await getDeepgramTemporaryKey()
@@ -53,6 +35,12 @@ router.post('/deepgram-token', async (req, res) => {
     res.status(status).json({ error: message })
   }
 })
+
+// Identity and persistence boundary: routes below require a real user and connected DB.
+router.use(requireRealDbAndUser)
+
+// POST /api/interview/create — persist step 1 + step 2 configuration
+router.post('/create', createInterview)
 
 // Interview lifecycle
 router.post('/:id/start', startInterview)
@@ -65,3 +53,4 @@ router.get('/results/me', getMyInterviewSkillResults)
 router.get('/:id', getInterviewById)
 
 export default router
+

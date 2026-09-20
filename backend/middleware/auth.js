@@ -1,5 +1,24 @@
+import mongoose from 'mongoose'
 import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
+
+/**
+ * requireRealDbAndUser — guards routes requiring MongoDB persistence.
+ * Rejects demo identities and offline DB states BEFORE any Mongoose query can run.
+ */
+export function requireRealDbAndUser(req, res, next) {
+  if (
+    mongoose.connection.readyState !== 1 ||
+    req.user?.isDemoIdentity ||
+    !mongoose.Types.ObjectId.isValid(req.user?._id)
+  ) {
+    return res.status(503).json({
+      error: 'Database unavailable. Please try again later.',
+      dbUnavailable: true,
+    })
+  }
+  next()
+}
 
 /**
  * authenticate — verifies the JWT from the Authorization header and attaches
@@ -18,14 +37,13 @@ export async function authenticate(req, res, next) {
     if (token && token.startsWith('mock-token-')) {
       const role = token.split('-')[2] || 'student'
       const demoEmail = `${role}@internsheu.edu`
-      // The bridge is designed to work even when MongoDB is unreachable
-      // (offline/demo logins), so a database error must not turn into a 500
-      // — fall back to the built-in demo identity below.
       let user = null
-      try {
-        user = await User.findOne({ email: demoEmail }).select('-passwordHash').lean()
-      } catch {
-        user = null
+      if (mongoose.connection.readyState === 1) {
+        try {
+          user = await User.findOne({ email: demoEmail }).select('-passwordHash').lean()
+        } catch {
+          user = null
+        }
       }
       if (!user) {
         user = {
@@ -34,9 +52,8 @@ export async function authenticate(req, res, next) {
           email: demoEmail,
           role,
           isActive: true,
-          // Explicit demo flag — downstream guards (e.g. the interview
-          // router) use this to keep demo identities OUT of MongoDB
-          // ObjectId queries instead of crashing with a CastError.
+          // Explicit demo flag — downstream guards use this to keep demo
+          // identities OUT of MongoDB ObjectId queries instead of crashing with a CastError.
           isDemoIdentity: true,
         }
       }
@@ -46,12 +63,17 @@ export async function authenticate(req, res, next) {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET)
 
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        error: 'Database is unavailable. Please try again shortly.',
+        dbUnavailable: true,
+      })
+    }
+
     let user
     try {
       user = await User.findById(decoded.id).select('-passwordHash').lean()
     } catch (dbErr) {
-      // MongoDB unavailable: a raw Mongoose error here would surface as a
-      // confusing 500 ("buffering timed out"). Report the real cause instead.
       console.warn('[auth] DB lookup failed for real-token auth:', dbErr.message)
       return res.status(503).json({
         error: 'Database is unavailable. Please try again shortly.',
